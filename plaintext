@@ -1,0 +1,16 @@
+{
+  "version": 2,
+  "builds": [
+    {
+      "src": "app/shadcn-ui/package.json",
+      "use": "@vercel/static-build",
+      "config": {
+        "buildCommand": "pnpm run build",
+        "distDir": "app/shadcn-ui/dist"
+      }
+    }
+  ],
+  "routes": [
+    { "src": "/(.*)", "dest": "app/shadcn-ui/index.html" }
+  ]
+}
