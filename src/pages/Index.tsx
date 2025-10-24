@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -24,6 +24,8 @@ export default function HaccpDashboard() {
   });
   const [refreshTrigger, setRefreshTrigger] = useState(0);
   const [showSettings, setShowSettings] = useState(false);
+  const [autoUnlocked, setAutoUnlocked] = useState(false);
+  const pressStartRef = useRef<number | null>(null);
 
   // Load company info from localStorage
   useEffect(() => {
@@ -32,6 +34,25 @@ export default function HaccpDashboard() {
       const settings = JSON.parse(savedSettings);
       setCompany(settings.company);
     }
+  }, []);
+
+  // Secret unlock: query param ?mgx=1 or shortcut Ctrl+Alt+G; persists in localStorage
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const fromQuery = params.get('mgx') === '1';
+    const fromStorage = localStorage.getItem('auto_generator_unlocked') === '1';
+    if (fromQuery || fromStorage) {
+      setAutoUnlocked(true);
+    }
+
+    const onKey = (e: KeyboardEvent) => {
+      if (e.ctrlKey && e.altKey && e.key.toLowerCase() === 'g') {
+        setAutoUnlocked(true);
+        localStorage.setItem('auto_generator_unlocked', '1');
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
   }, []);
 
   const saveCompanyInfo = () => {
@@ -84,7 +105,27 @@ export default function HaccpDashboard() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center py-6">
             <div>
-              <h1 className="text-3xl font-bold text-gray-900">Sistema HACCP</h1>
+              <h1
+                className="text-3xl font-bold text-gray-900"
+                onTouchStart={() => { pressStartRef.current = Date.now(); }}
+                onTouchEnd={() => {
+                  if (pressStartRef.current && Date.now() - pressStartRef.current > 800) {
+                    setAutoUnlocked(true);
+                    localStorage.setItem('auto_generator_unlocked', '1');
+                  }
+                  pressStartRef.current = null;
+                }}
+                onMouseDown={() => { pressStartRef.current = Date.now(); }}
+                onMouseUp={() => {
+                  if (pressStartRef.current && Date.now() - pressStartRef.current > 800) {
+                    setAutoUnlocked(true);
+                    localStorage.setItem('auto_generator_unlocked', '1');
+                  }
+                  pressStartRef.current = null;
+                }}
+              >
+                Sistema HACCP
+              </h1>
               <p className="text-gray-600">Gestione Automatizzata Registri</p>
             </div>
             <div className="flex items-center gap-4">
@@ -209,25 +250,29 @@ export default function HaccpDashboard() {
 
         {/* Main Tabs */}
         <Tabs defaultValue="daily" className="space-y-6">
-          <TabsList className="grid w-full grid-cols-6">
-            <TabsTrigger value="daily" className="flex items-center gap-2">
+          <TabsList className="w-full flex-wrap sm:flex-nowrap h-auto sm:h-10 overflow-x-auto sm:overflow-visible gap-1">
+            <TabsTrigger value="daily" className="flex items-center gap-2 whitespace-normal text-xs sm:text-sm px-2 sm:px-3 py-1 sm:py-1.5 flex-shrink-0">
               <FileText className="w-4 h-4" />
               Compilazione Giornaliera
             </TabsTrigger>
-            <TabsTrigger value="auto" className="flex items-center gap-2">
-              <Zap className="w-4 h-4" />
-              Generazione Automatica
-            </TabsTrigger>
-            <TabsTrigger value="archive" className="flex items-center gap-2">
+            {autoUnlocked && (
+              <TabsTrigger value="auto" className="flex items-center gap-2 whitespace-normal text-xs sm:text-sm px-2 sm:px-3 py-1 sm:py-1.5 flex-shrink-0">
+                <Zap className="w-4 h-4" />
+                Generazione Automatica
+              </TabsTrigger>
+            )}
+            <TabsTrigger value="archive" className="flex items-center gap-2 whitespace-normal text-xs sm:text-sm px-2 sm:px-3 py-1 sm:py-1.5 flex-shrink-0">
               <Archive className="w-4 h-4" />
               Archivio e Consultazione
             </TabsTrigger>
-            <TabsTrigger value="cloud" className="flex items-center gap-2">
+            <TabsTrigger value="cloud" className="flex items-center gap-2 whitespace-normal text-xs sm:text-sm px-2 sm:px-3 py-1 sm:py-1.5 flex-shrink-0">
               <Cloud className="w-4 h-4" />
               Google Drive
             </TabsTrigger>
-            <TabsTrigger value="semilavorati"><FileText className="mr-2 h-4 w-4" /> Prodotti Semilavorati</TabsTrigger>
-            <TabsTrigger value="firma-osa" className="flex items-center gap-2">
+            <TabsTrigger value="semilavorati" className="flex items-center gap-2 whitespace-normal text-xs sm:text-sm px-2 sm:px-3 py-1 sm:py-1.5 flex-shrink-0">
+              <FileText className="mr-2 h-4 w-4" /> Prodotti Semilavorati
+            </TabsTrigger>
+            <TabsTrigger value="firma-osa" className="flex items-center gap-2 whitespace-normal text-xs sm:text-sm px-2 sm:px-3 py-1 sm:py-1.5 flex-shrink-0">
               <PenTool className="w-4 h-4" />
               Firma OSA
             </TabsTrigger>
@@ -237,9 +282,11 @@ export default function HaccpDashboard() {
             <HaccpForm company={company} onRecordSaved={handleRecordUpdate} />
           </TabsContent>
 
-          <TabsContent value="auto">
-            <AutoGenerator company={company} onGenerationComplete={handleRecordUpdate} />
-          </TabsContent>
+          {autoUnlocked && (
+            <TabsContent value="auto">
+              <AutoGenerator company={company} onGenerationComplete={handleRecordUpdate} />
+            </TabsContent>
+          )}
 
           <TabsContent value="archive">
             <RecordsList company={company} refreshTrigger={refreshTrigger} />
