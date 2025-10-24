@@ -431,16 +431,16 @@ export const generateMonthlyPDF = async (records: HaccpRecord[], company: Compan
   } catch {
     osaBlob = undefined;
   }
-  for (const record of records) {
-    const date = new Date(record.date);
-    const day = date.getDate();
+  
+  // Iterate day-by-day to place signature deterministically
+  for (let day = 1; day <= 31; day++) {
+    const dateStr = `${year}-${month.toString().padStart(2, '0')}-${day.toString().padStart(2, '0')}`;
+    const record = records.find(r => r.date === dateStr);
+    if (!record) continue;
+
     const x = startX + labelColWidth + (day - 1) * dayColWidth;
-    
-    // signature cell border already drawn above for every day
-    
     let signatureAdded = false;
-    
-    // Use preloaded OSA signature if available
+
     if (osaBlob) {
       const ok = await addSignatureToPdf(
         pdf,
@@ -453,20 +453,18 @@ export const generateMonthlyPDF = async (records: HaccpRecord[], company: Compan
        );
       if (ok) signatureAdded = true;
     }
-    
-    // Fallback to record signature if OSA signature not available or failed
+
     if (!signatureAdded && record.signature) {
       try {
-        const sigWidth = dayColWidth - 0.4;
-        const sigHeight = cellHeight - 0.8;
-        pdf.addImage(record.signature, 'PNG', x + 0.4, sigY + 0.8, sigWidth, sigHeight);
+        const sigWidth = dayColWidth - 1.0;
+        const sigHeight = sigCellHeight - 1.0;
+        pdf.addImage(record.signature, 'PNG', x + 0.5, sigY + 0.5, sigWidth, sigHeight);
         signatureAdded = true;
       } catch (error) {
         console.warn('Could not add record signature to PDF:', error);
       }
     }
-    
-    // Final fallback: add "✓" text if no signature was added
+
     if (!signatureAdded) {
       pdf.setFont('helvetica', 'normal');
       pdf.setFontSize(8);
@@ -475,8 +473,6 @@ export const generateMonthlyPDF = async (records: HaccpRecord[], company: Compan
       const centerX = x + (dayColWidth - textWidth) / 2;
       pdf.text(checkText, centerX, sigY + sigCellHeight/2 + 1);
     }
-    // Ridisegna il bordo della cella firma sopra l'immagine
-    pdf.rect(x, sigY, dayColWidth, sigCellHeight);
   }
   
   return pdf;
@@ -599,13 +595,14 @@ export const generateMonthlySanificationPDF = async (records: HaccpRecord[], com
   } catch {
     osaBlob2 = undefined;
   }
-  for (const record of records) {
-    const date = new Date(record.date);
-    const day = date.getDate();
+  // Iterate day-by-day to place signature deterministically
+  for (let day = 1; day <= 31; day++) {
+    const dateStr = `${year}-${month.toString().padStart(2, '0')}-${day.toString().padStart(2, '0')}`;
+    const record = records.find(r => r.date === dateStr);
+    if (!record) continue;
+
     const x = startX + labelColWidth + (day - 1) * dayColWidth;
-    
-    // signature cell border already drawn above for every day
-    
+
     let signatureAdded = false;
     
     if (osaBlob2) {
@@ -623,9 +620,9 @@ export const generateMonthlySanificationPDF = async (records: HaccpRecord[], com
     
     if (!signatureAdded && record.signature) {
       try {
-        const sigWidth = dayColWidth - 0.4;
-        const sigHeight = cellHeight - 0.8;
-        pdf.addImage(record.signature, 'PNG', x + 0.4, sigY + 0.8, sigWidth, sigHeight);
+        const sigWidth = dayColWidth - 1.0;
+        const sigHeight = sigCellHeight2 - 1.0;
+        pdf.addImage(record.signature, 'PNG', x + 0.5, sigY + 0.5, sigWidth, sigHeight);
         signatureAdded = true;
       } catch (error) {
         console.warn('Could not add record signature to PDF:', error);
@@ -640,8 +637,6 @@ export const generateMonthlySanificationPDF = async (records: HaccpRecord[], com
       const centerX = x + (dayColWidth - textWidth) / 2;
       pdf.text(checkText, centerX, sigY + sigCellHeight2/2 + 1);
     }
-    // Ridisegna il bordo della cella firma sopra l'immagine
-    pdf.rect(x, sigY, dayColWidth, sigCellHeight2);
   }
   
   // Ensure bottom closing line of table
