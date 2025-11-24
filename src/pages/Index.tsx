@@ -13,8 +13,11 @@ import { CompanyInfo } from '@/types/haccp';
 import { getRecords } from '@/lib/haccpUtils';
 import { Building2, FileText, Zap, Archive, Settings, Cloud, PenTool } from 'lucide-react';
 import Semilavorati from '@/components/Semilavorati';
+import IncomingFoods from '@/components/IncomingFoods';
 import OsaSignature from '@/components/OsaSignature';
 import { startAutoRegisterScheduler } from '@/lib/autoRegisters';
+import { googleDriveManager } from '@/lib/googleDrive';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 
 export default function HaccpDashboard() {
   const [company, setCompany] = useState<CompanyInfo>({
@@ -26,6 +29,11 @@ export default function HaccpDashboard() {
   const [showSettings, setShowSettings] = useState(false);
   const [autoUnlocked, setAutoUnlocked] = useState(false);
   const pressStartRef = useRef<number | null>(null);
+  const [activeTab, setActiveTab] = useState<'daily'|'auto'|'archive'|'ingresso'|'cloud'|'semilavorati'|'firma-osa'>('daily');
+  const [driveDialogOpen, setDriveDialogOpen] = useState(false);
+  const [driveConnected, setDriveConnected] = useState(false);
+  const secretClicksRef = useRef<number>(0);
+  const secretTimerRef = useRef<number | null>(null);
 
   // Load company info from localStorage
   useEffect(() => {
@@ -53,6 +61,30 @@ export default function HaccpDashboard() {
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
+  }, []);
+
+  // Prompt iniziale Drive + redirect automatico a Semilavorati
+  useEffect(() => {
+    (async () => {
+      try {
+        await googleDriveManager.initialize();
+        const connected = await googleDriveManager.checkExistingToken();
+        if (connected) {
+          setDriveConnected(true);
+          setActiveTab('semilavorati');
+        } else {
+          setDriveDialogOpen(true);
+        }
+      } catch (e) {
+        console.error('Init Google Drive fallito:', e);
+      }
+    })();
+    return () => {
+      if (secretTimerRef.current) {
+        window.clearTimeout(secretTimerRef.current);
+        secretTimerRef.current = null;
+      }
+    };
   }, []);
 
   const saveCompanyInfo = () => {
@@ -98,6 +130,36 @@ export default function HaccpDashboard() {
     return () => { try { cancel(); } catch {} };
   }, [company]);
 
+  const handleDriveConnect = async () => {
+    try {
+      const ok = await googleDriveManager.signIn();
+      setDriveConnected(ok);
+      if (ok) {
+        setDriveDialogOpen(false);
+        setActiveTab('semilavorati');
+      }
+    } catch (e) {
+      console.error('Connessione Drive fallita:', e);
+    }
+  };
+
+  // Trigger nascosto aggiuntivo: triplo click sul sottotitolo
+  const handleSecretClick = () => {
+    if (secretTimerRef.current) {
+      window.clearTimeout(secretTimerRef.current);
+      secretTimerRef.current = null;
+    }
+    secretClicksRef.current += 1;
+    if (secretClicksRef.current >= 3) {
+      secretClicksRef.current = 0;
+      setAutoUnlocked(true);
+      return;
+    }
+    secretTimerRef.current = window.setTimeout(() => {
+      secretClicksRef.current = 0;
+    }, 1500);
+  };
+
   return (
     <div className="min-h-screen bg-gray-50">
       {/* Header */}
@@ -126,7 +188,7 @@ export default function HaccpDashboard() {
               >
                 Sistema HACCP
               </h1>
-              <p className="text-gray-600">Gestione Automatizzata Registri</p>
+              <p className="text-gray-600" onClick={handleSecretClick}>Gestione Automatizzata Registri</p>
             </div>
             <div className="flex items-center gap-4">
               <div className="text-right">
@@ -249,7 +311,7 @@ export default function HaccpDashboard() {
         </div>
 
         {/* Main Tabs */}
-        <Tabs defaultValue="daily" className="space-y-6">
+        <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as any)} className="space-y-6">
           <TabsList className="w-full flex-wrap sm:flex-nowrap h-auto sm:h-10 overflow-x-auto sm:overflow-visible gap-1">
             <TabsTrigger value="daily" className="flex items-center gap-2 whitespace-normal text-xs sm:text-sm px-2 sm:px-3 py-1 sm:py-1.5 flex-shrink-0">
               <FileText className="w-4 h-4" />
@@ -264,6 +326,10 @@ export default function HaccpDashboard() {
             <TabsTrigger value="archive" className="flex items-center gap-2 whitespace-normal text-xs sm:text-sm px-2 sm:px-3 py-1 sm:py-1.5 flex-shrink-0">
               <Archive className="w-4 h-4" />
               Archivio e Consultazione
+            </TabsTrigger>
+            <TabsTrigger value="ingresso" className="flex items-center gap-2 whitespace-normal text-xs sm:text-sm px-2 sm:px-3 py-1 sm:py-1.5 flex-shrink-0">
+              <Archive className="w-4 h-4" />
+              Alimenti in Ingresso
             </TabsTrigger>
             <TabsTrigger value="cloud" className="flex items-center gap-2 whitespace-normal text-xs sm:text-sm px-2 sm:px-3 py-1 sm:py-1.5 flex-shrink-0">
               <Cloud className="w-4 h-4" />
@@ -292,6 +358,10 @@ export default function HaccpDashboard() {
             <RecordsList company={company} refreshTrigger={refreshTrigger} />
           </TabsContent>
 
+          <TabsContent value="ingresso">
+            <IncomingFoods />
+          </TabsContent>
+
           <TabsContent value="cloud">
             <GoogleDriveSync company={company} />
           </TabsContent>
@@ -304,6 +374,23 @@ export default function HaccpDashboard() {
           </TabsContent>
         </Tabs>
       </div>
+
+      {/* Dialog connessione Google Drive */}
+      <Dialog open={driveDialogOpen} onOpenChange={setDriveDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Connessione a Google Drive</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground">
+            Per salvare e sincronizzare i registri HACCP, collega il tuo account Google Drive.
+          </p>
+          <DialogFooter>
+            <Button onClick={handleDriveConnect}>
+              <Cloud className="w-4 h-4 mr-2" /> Connetti
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

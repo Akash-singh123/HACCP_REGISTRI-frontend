@@ -3,6 +3,8 @@ import { useSemiProductsStore } from '@/store/semiProductsStore';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Popover, PopoverTrigger, PopoverContent } from '@/components/ui/popover';
+import { Command, CommandInput, CommandList, CommandEmpty, CommandGroup, CommandItem } from '@/components/ui/command';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription } from '@/components/ui/alert';
@@ -14,6 +16,7 @@ import { useForm, useFieldArray } from 'react-hook-form';
 import { z } from 'zod';
 import { zodResolver } from '@hookform/resolvers/zod';
 import jsPDF from 'jspdf';
+import { useIncomingFoodsStore, IncomingFood } from '@/store/incomingFoodsStore';
 
 const ingredientSchema = z.object({
   nome: z.string().min(1, 'Nome ingrediente richiesto'),
@@ -30,12 +33,15 @@ const schema = z.object({
 
 export default function Semilavorati() {
   const { templates, addTemplate, loadFromCache, removeTemplate, removeIngredient } = useSemiProductsStore();
+  const { items: incomingItems, loadFromCache: loadIncomingFoods } = useIncomingFoodsStore();
   const [selectedProduct, setSelectedProduct] = useState<string>('');
   const [isLoading, setIsLoading] = useState(false);
   const [isConnected, setIsConnected] = useState(false);
   const [showAddDialog, setShowAddDialog] = useState(false);
 
   useEffect(() => { loadFromCache(); }, [loadFromCache]);
+  // Carica l'archivio degli alimenti in ingresso (per i lotti)
+  useEffect(() => { loadIncomingFoods(); }, [loadIncomingFoods]);
 
   useEffect(() => {
     const init = async () => {
@@ -66,6 +72,7 @@ export default function Semilavorati() {
 
   const { control, setValue, handleSubmit, reset } = form;
   const { fields, replace, remove } = useFieldArray({ control, name: 'ingredienti' });
+  const watchedIngredients = form.watch('ingredienti');
 
   useEffect(() => {
     setValue('prodotto', selectedProduct);
@@ -75,6 +82,19 @@ export default function Semilavorati() {
       replace([]);
     }
   }, [selectedTemplate, selectedProduct, replace, setValue]);
+
+  // Raggruppa i lotti per nome alimento e ordina per data di acquisto
+  const lotsByFood = useMemo(() => {
+    const groups: Record<string, IncomingFood[]> = {};
+    for (const it of incomingItems) {
+      if (!groups[it.nome]) groups[it.nome] = [];
+      groups[it.nome].push(it);
+    }
+    Object.keys(groups).forEach(k => {
+      groups[k].sort((a, b) => new Date(a.dataAcquisto).getTime() - new Date(b.dataAcquisto).getTime());
+    });
+    return groups;
+  }, [incomingItems]);
 
   function formatDate(itDateStr: string): string {
     // input atteso: YYYY-MM-DD, output: DD/MM/YYYY
@@ -292,6 +312,14 @@ export default function Semilavorati() {
 
   const onSubmit = handleSubmit(async (values) => {
     if (!isConnected) return toast.error('Connetti Google Drive per salvare il registro');
+    // Validazione HACCP: consentire solo lotti registrati negli Alimenti in Ingresso
+    for (const ing of values.ingredienti) {
+      const valid = incomingItems.some(i => i.nome === ing.nome && i.lotto === ing.lotto);
+      if (!valid) {
+        toast.error(`Lotto non registrato per ingrediente "${ing.nome}": ${ing.lotto || 'vuoto'}`);
+        return;
+      }
+    }
     setIsLoading(true);
     try {
       const { rootId } = await googleDriveManager.getHaccpFolderStructure();
@@ -448,7 +476,41 @@ export default function Semilavorati() {
                   {fields.map((f, idx) => (
                     <div key={idx} className="grid grid-cols-1 md:grid-cols-3 gap-2 items-center">
                       <Input value={f.nome} readOnly />
-                      <Input {...form.register(`ingredienti.${idx}.lotto` as const)} placeholder={`Lotto per ${f.nome}`} />
+                      {lotsByFood[f.nome] && lotsByFood[f.nome].length > 0 ? (
+                        <div className="flex items-center gap-2">
+                          <Input readOnly value={watchedIngredients?.[idx]?.lotto || ''} placeholder={`Seleziona lotto per ${f.nome}`} />
+                          <Popover>
+                            <PopoverTrigger asChild>
+                              <Button type="button" variant="outline">Scegli lotto</Button>
+                            </PopoverTrigger>
+                            <PopoverContent className="p-0 w-[340px]">
+                              <Command>
+                                <CommandInput placeholder={`Filtra lotti di ${f.nome}...`} />
+                                <CommandList>
+                                  <CommandEmpty>Nessun lotto trovato</CommandEmpty>
+                                  <CommandGroup heading="Lotti registrati">
+                                    {lotsByFood[f.nome].map((it) => (
+                                      <CommandItem
+                                        key={it.id}
+                                        value={`${it.nome} ${it.lotto} ${it.dataAcquisto}`}
+                                        onSelect={() => setValue(`ingredienti.${idx}.lotto` as const, it.lotto)}
+                                      >
+                                        {`${it.nome} – ${it.lotto} – ${formatDate(it.dataAcquisto)}`}
+                                      </CommandItem>
+                                    ))}
+                                  </CommandGroup>
+                                </CommandList>
+                              </Command>
+                            </PopoverContent>
+                          </Popover>
+                        </div>
+                      ) : (
+                        <Alert>
+                          <AlertDescription>
+                            Nessun lotto registrato per "{f.nome}". Aggiungi in "Alimenti in Ingresso".
+                          </AlertDescription>
+                        </Alert>
+                      )}
                       <div className="flex justify-end">
                         <Button type="button" variant="outline" size="icon" title="Rimuovi ingrediente dalla registrazione" onClick={() => remove(idx)}>
                           <Trash className="h-4 w-4" />
