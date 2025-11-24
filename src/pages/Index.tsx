@@ -28,7 +28,6 @@ export default function HaccpDashboard() {
   const [refreshTrigger, setRefreshTrigger] = useState(0);
   const [showSettings, setShowSettings] = useState(false);
   const [autoUnlocked, setAutoUnlocked] = useState(false);
-  const pressStartRef = useRef<number | null>(null);
   const [activeTab, setActiveTab] = useState<'daily'|'auto'|'archive'|'ingresso'|'cloud'|'semilavorati'|'firma-osa'>('daily');
   const [driveDialogOpen, setDriveDialogOpen] = useState(false);
   const [driveConnected, setDriveConnected] = useState(false);
@@ -44,24 +43,7 @@ export default function HaccpDashboard() {
     }
   }, []);
 
-  // Secret unlock: query param ?mgx=1 or shortcut Ctrl+Alt+G; persists in localStorage
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const fromQuery = params.get('mgx') === '1';
-    const fromStorage = localStorage.getItem('auto_generator_unlocked') === '1';
-    if (fromQuery || fromStorage) {
-      setAutoUnlocked(true);
-    }
-
-    const onKey = (e: KeyboardEvent) => {
-      if (e.ctrlKey && e.altKey && e.key.toLowerCase() === 'g') {
-        setAutoUnlocked(true);
-        localStorage.setItem('auto_generator_unlocked', '1');
-      }
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, []);
+  // Rimosso ogni sblocco evidente (query, tastiera, long-press) per nascondere meglio la funzione
 
   // Prompt iniziale Drive + redirect automatico a Semilavorati
   useEffect(() => {
@@ -169,22 +151,6 @@ export default function HaccpDashboard() {
             <div>
               <h1
                 className="text-3xl font-bold text-gray-900"
-                onTouchStart={() => { pressStartRef.current = Date.now(); }}
-                onTouchEnd={() => {
-                  if (pressStartRef.current && Date.now() - pressStartRef.current > 800) {
-                    setAutoUnlocked(true);
-                    localStorage.setItem('auto_generator_unlocked', '1');
-                  }
-                  pressStartRef.current = null;
-                }}
-                onMouseDown={() => { pressStartRef.current = Date.now(); }}
-                onMouseUp={() => {
-                  if (pressStartRef.current && Date.now() - pressStartRef.current > 800) {
-                    setAutoUnlocked(true);
-                    localStorage.setItem('auto_generator_unlocked', '1');
-                  }
-                  pressStartRef.current = null;
-                }}
               >
                 Sistema HACCP
               </h1>
