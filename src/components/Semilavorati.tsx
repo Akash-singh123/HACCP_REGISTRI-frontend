@@ -32,12 +32,28 @@ const schema = z.object({
 });
 
 export default function Semilavorati() {
-  const { templates, addTemplate, loadFromCache, removeTemplate, removeIngredient } = useSemiProductsStore();
+  const {
+    templates,
+    categories,
+    addTemplate,
+    loadFromCache,
+    removeTemplate,
+    removeIngredient,
+    addIngredient,
+    updateTemplate,
+    addCategory,
+    renameCategory,
+    removeCategory
+  } = useSemiProductsStore();
   const { items: incomingItems, loadFromCache: loadIncomingFoods } = useIncomingFoodsStore();
   const [selectedProduct, setSelectedProduct] = useState<string>('');
+  const [selectedCategory, setSelectedCategory] = useState<string>('');
   const [isLoading, setIsLoading] = useState(false);
   const [isConnected, setIsConnected] = useState(false);
   const [showAddDialog, setShowAddDialog] = useState(false);
+  const [showEditDialog, setShowEditDialog] = useState<{ open: boolean; nome?: string }>(() => ({ open: false }));
+  const [newCategoryName, setNewCategoryName] = useState('');
+  const [renameCatState, setRenameCatState] = useState<{ cat?: string; name: string }>({ name: '' });
 
   useEffect(() => { loadFromCache(); }, [loadFromCache]);
   // Carica l'archivio degli alimenti in ingresso (per i lotti)
@@ -58,6 +74,10 @@ export default function Semilavorati() {
   }, []);
 
   const selectedTemplate = useMemo(() => templates.find(t => t.nome === selectedProduct) || null, [templates, selectedProduct]);
+  const filteredTemplates = useMemo(() => {
+    if (!selectedCategory) return templates;
+    return templates.filter(t => (t.categoria || '') === selectedCategory);
+  }, [templates, selectedCategory]);
 
   const form = useForm<z.infer<typeof schema>>({
     resolver: zodResolver(schema),
@@ -73,6 +93,13 @@ export default function Semilavorati() {
   const { control, setValue, handleSubmit, reset } = form;
   const { fields, replace, remove } = useFieldArray({ control, name: 'ingredienti' });
   const watchedIngredients = form.watch('ingredienti');
+  // Aggiorna automaticamente "lotto_prodotto" al cambio prodotto usando la data corrente
+  useEffect(() => {
+    if (selectedProduct) {
+      const base = buildBaseLottoWithDate(selectedProduct, new Date());
+      setValue('lotto_prodotto', base, { shouldValidate: true });
+    }
+  }, [selectedProduct, setValue]);
 
   useEffect(() => {
     setValue('prodotto', selectedProduct);
@@ -103,6 +130,63 @@ export default function Semilavorati() {
       if (y && m && d) return `${d}/${m}/${y}`;
       return itDateStr;
     } catch { return itDateStr; }
+  }
+  // === Generazione lotto prodotto (SIGLA + GGMMAA) ===
+  function formatGGMMAA(itDateStr: string): string {
+    try {
+      const d = new Date(itDateStr);
+      const day = String(d.getDate()).padStart(2, '0');
+      const month = String(d.getMonth() + 1).padStart(2, '0');
+      const year = String(d.getFullYear()).slice(-2);
+      return `${day}${month}${year}`;
+    } catch {
+      return '';
+    }
+  }
+
+  function extractSiglaFromName(nomeProdotto: string): string {
+    const words = nomeProdotto.trim().split(/\s+/).filter(Boolean);
+    const cleaned = words.map(w => w.replace(/[^A-Za-zÀ-ÖØ-öø-ÿ]/g, ''));
+    if (cleaned.length <= 1) {
+      const w = (cleaned[0] || '').toUpperCase();
+      return w.slice(0, 3);
+    } else {
+      const w1 = (cleaned[0] || '').toUpperCase().slice(0, 2);
+      const w2 = (cleaned[1] || '').toUpperCase().slice(0, 2);
+      return `${w1}${w2}`;
+    }
+  }
+
+  function buildBaseLotto(nomeProdotto: string, itDateStr: string): string {
+    const sigla = extractSiglaFromName(nomeProdotto);
+    const ggmmaa = formatGGMMAA(itDateStr);
+    return `${sigla}${ggmmaa}`;
+  }
+  // Variante basata su Date (data corrente)
+  function formatGGMMAAFromDate(d: Date): string {
+    const day = String(d.getDate()).padStart(2, '0');
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const year = String(d.getFullYear()).slice(-2);
+    return `${day}${month}${year}`;
+  }
+  function buildBaseLottoWithDate(nomeProdotto: string, d: Date): string {
+    const sigla = extractSiglaFromName(nomeProdotto);
+    const ggmmaa = formatGGMMAAFromDate(d);
+    return `${sigla}${ggmmaa}`;
+  }
+
+  function ensureUniqueLotto(base: string, csvText: string): string {
+    const existing = new Set<string>();
+    const lines = csvText.split(/\r?\n/).filter(l => l.trim().length > 0);
+    for (let i = 1; i < lines.length; i++) {
+      const cols = lines[i].split(';');
+      const lotto = (cols[3] || '').trim();
+      if (lotto) existing.add(lotto);
+    }
+    if (!existing.has(base)) return base;
+    let c = 2;
+    while (existing.has(`${base}${c}`)) c++;
+    return `${base}${c}`;
   }
 
   function buildHeader(maxPairs: number): string {
@@ -328,7 +412,11 @@ export default function Semilavorati() {
 
       const prodDate = formatDate(values.data_produzione);
       const expDate = formatDate(values.data_scadenza);
-      const row = buildRow(prodDate, expDate, values.prodotto, values.lotto_prodotto, values.ingredienti, ensured.slots);
+      // Calcola lotto base e garantisce unicità rispetto al CSV esistente
+      const baseLotto = buildBaseLottoWithDate(values.prodotto, new Date());
+      const uniqueLotto = ensureUniqueLotto(baseLotto, existingCsv);
+      setValue('lotto_prodotto', uniqueLotto, { shouldValidate: true });
+      const row = buildRow(prodDate, expDate, values.prodotto, uniqueLotto, values.ingredienti, ensured.slots);
       const updatedCsv = appendRowsToCsv(existingCsv, row);
 
       await googleDriveManager.uploadOrUpdateTextFile('Registro_Semilavorati.csv', updatedCsv, rootId, 'text/csv');
@@ -343,8 +431,8 @@ export default function Semilavorati() {
   });
 
   // Form per aggiungere nuovo template
-  const addForm = useForm<{ nome: string; ingredienti: { nome: string }[] }>({
-    defaultValues: { nome: '', ingredienti: [{ nome: '' }] }
+  const addForm = useForm<{ nome: string; categoria?: string; note?: string; ingredienti: { nome: string }[] }>({
+    defaultValues: { nome: '', categoria: '', note: '', ingredienti: [{ nome: '' }] }
   });
   const addFields = useFieldArray({ control: addForm.control, name: 'ingredienti' });
 
@@ -352,10 +440,10 @@ export default function Semilavorati() {
     if (!vals.nome.trim()) return toast.error('Inserisci il nome del prodotto');
     const cleaned = vals.ingredienti.map(i => ({ nome: i.nome.trim() })).filter(i => i.nome);
     if (!cleaned.length) return toast.error('Aggiungi almeno un ingrediente');
-    addTemplate({ nome: vals.nome.trim(), ingredienti: cleaned });
+    addTemplate({ nome: vals.nome.trim(), categoria: vals.categoria?.trim() || undefined, note: vals.note?.trim() || undefined, ingredienti: cleaned });
     toast.success('Prodotto semilavorato aggiunto');
     setShowAddDialog(false);
-    addForm.reset({ nome: '', ingredienti: [{ nome: '' }] });
+    addForm.reset({ nome: '', categoria: '', note: '', ingredienti: [{ nome: '' }] });
   });
 
   async function handleUploadPdf() {
@@ -388,7 +476,7 @@ export default function Semilavorati() {
 
   // Rimozione prodotto (template)
   const handleRemoveProduct = (nome: string) => {
-    if (window.confirm(`Rimuovere il prodotto "${nome}"?`)) {
+    if (window.confirm('Sei sicuro? Questa azione non può essere annullata.')) {
       removeTemplate(nome);
       if (selectedProduct === nome) {
         setSelectedProduct('');
@@ -401,8 +489,47 @@ export default function Semilavorati() {
   const handleRemoveIngredientFromTemplate = (idx: number) => {
     const tpl = templates.find(t => t.nome === selectedProduct);
     if (!tpl) return;
-    removeIngredient(tpl.nome, idx);
+    if (window.confirm('Sei sicuro? Questa azione non può essere annullata.')) {
+      removeIngredient(tpl.nome, idx);
+    }
   };
+
+  const [newIngredientName, setNewIngredientName] = useState('');
+  const handleAddIngredientToTemplate = () => {
+    const tpl = templates.find(t => t.nome === selectedProduct);
+    if (!tpl) return;
+    const name = newIngredientName.trim();
+    if (!name) return toast.error('Inserisci il nome dell’ingrediente');
+    addIngredient(tpl.nome, { nome: name });
+    setNewIngredientName('');
+    toast.success('Ingrediente aggiunto al template');
+  };
+
+  // Editing template (nome, categoria, note)
+  const editForm = useForm<{ nome: string; categoria?: string; note?: string }>({
+    defaultValues: { nome: '', categoria: '', note: '' }
+  });
+  useEffect(() => {
+    if (showEditDialog.open && showEditDialog.nome) {
+      const tpl = templates.find(t => t.nome === showEditDialog.nome);
+      if (tpl) editForm.reset({ nome: tpl.nome, categoria: tpl.categoria || '', note: tpl.note || '' });
+    }
+  }, [showEditDialog, templates]);
+  const handleEditSubmit = editForm.handleSubmit((vals) => {
+    const original = showEditDialog.nome!;
+    const changes = {
+      nome: vals.nome.trim(),
+      categoria: vals.categoria?.trim() || undefined,
+      note: vals.note?.trim() || undefined
+    };
+    if (window.confirm('Sei sicuro? Questa azione non può essere annullata.')) {
+      updateTemplate(original, changes);
+      // Se stiamo visualizzando questo prodotto, aggiorna selezione
+      if (selectedProduct === original) setSelectedProduct(changes.nome || original);
+      toast.success('Semilavorato aggiornato');
+      setShowEditDialog({ open: false });
+    }
+  });
 
   return (
     <div className="space-y-6">
@@ -413,15 +540,82 @@ export default function Semilavorati() {
             <Badge variant={isConnected ? 'success' : 'destructive'}>{isConnected ? 'Drive connesso' : 'Drive non connesso'}</Badge>
           </CardTitle>
         </CardHeader>
-        <CardContent>
-          <div className="flex flex-col gap-4">
-            {/* Elenco prodotti */}
+      <CardContent>
+        <div className="flex flex-col gap-4">
+            {/* Gestione categorie */}
+            <div className="space-y-3">
+              <Label>Categorie</Label>
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  variant={selectedCategory === '' ? 'default' : 'outline'}
+                  onClick={() => setSelectedCategory('')}
+                >Tutte</Button>
+                {categories.map((c) => (
+                  <div key={c} className="flex items-center gap-2">
+                    <Button
+                      variant={selectedCategory === c ? 'default' : 'outline'}
+                      onClick={() => setSelectedCategory(c)}
+                    >{c}</Button>
+                    <Popover>
+                      <PopoverTrigger asChild>
+                        <Button variant="outline" size="sm">Rinomina</Button>
+                      </PopoverTrigger>
+                      <PopoverContent className="w-64 space-y-2">
+                        <Label>Nuovo nome</Label>
+                        <Input
+                          value={renameCatState.cat === c ? renameCatState.name : ''}
+                          onChange={(e) => setRenameCatState({ cat: c, name: e.target.value })}
+                          placeholder={`Rinomina "${c}"`}
+                        />
+                        <div className="flex justify-end gap-2">
+                          <Button variant="outline" onClick={() => setRenameCatState({ name: '' })}>Annulla</Button>
+                          <Button onClick={() => {
+                            if (window.confirm('Sei sicuro? Questa azione non può essere annullata.')) {
+                              renameCategory(c, renameCatState.name);
+                              setRenameCatState({ name: '' });
+                            }
+                          }}>Salva</Button>
+                        </div>
+                      </PopoverContent>
+                    </Popover>
+                    <Button
+                      variant="destructive"
+                      size="icon"
+                      title="Elimina categoria"
+                      onClick={() => {
+                        if (window.confirm('Sei sicuro? Questa azione non può essere annullata.')) {
+                          removeCategory(c);
+                          if (selectedCategory === c) setSelectedCategory('');
+                        }
+                      }}
+                    >
+                      <Trash className="h-4 w-4" />
+                    </Button>
+                  </div>
+                ))}
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <Button variant="outline"><Plus className="mr-2 h-4 w-4" /> Crea categoria</Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-64 space-y-2">
+                    <Label>Nome categoria</Label>
+                    <Input value={newCategoryName} onChange={(e) => setNewCategoryName(e.target.value)} placeholder="es. Salse" />
+                    <div className="flex justify-end gap-2">
+                      <Button variant="outline" onClick={() => setNewCategoryName('')}>Annulla</Button>
+                      <Button onClick={() => { addCategory(newCategoryName); setNewCategoryName(''); }}>Crea</Button>
+                    </div>
+                  </PopoverContent>
+                </Popover>
+              </div>
+            </div>
+            {/* Elenco prodotti (filtrati per categoria se selezionata) */}
             <div className="flex flex-wrap gap-2">
-              {templates.map(t => (
+              {filteredTemplates.map(t => (
                 <div key={t.nome} className="flex items-center gap-2">
                   <Button className="flex-1" variant={selectedProduct === t.nome ? 'default' : 'outline'} onClick={() => setSelectedProduct(t.nome)}>
-                    {t.nome}
+                    {t.nome}{t.categoria ? ` · ${t.categoria}` : ''}
                   </Button>
+                  <Button variant="outline" size="sm" onClick={() => setShowEditDialog({ open: true, nome: t.nome })}>Modifica</Button>
                   <Button variant="destructive" size="icon" title="Rimuovi prodotto" onClick={() => handleRemoveProduct(t.nome)}>
                     <Trash className="h-4 w-4" />
                   </Button>
@@ -437,7 +631,7 @@ export default function Semilavorati() {
               <form onSubmit={onSubmit} className="space-y-6">
                 {/* Gestione ingredienti del template (permanente) */}
                 <div className="space-y-2">
-                  <Label>Ingredienti del template (rimozione permanente)</Label>
+                  <Label>Ingredienti del template</Label>
                   <div className="space-y-2">
                     {selectedTemplate.ingredienti.map((ing, idx) => (
                       <div key={idx} className="flex items-center gap-2">
@@ -450,6 +644,10 @@ export default function Semilavorati() {
                     {selectedTemplate.ingredienti.length === 0 && (
                       <p className="text-sm text-muted-foreground">Nessun ingrediente nel template.</p>
                     )}
+                    <div className="flex items-center gap-2">
+                      <Input value={newIngredientName} onChange={(e) => setNewIngredientName(e.target.value)} placeholder="Nuovo ingrediente" className="flex-1" />
+                      <Button type="button" variant="outline" onClick={handleAddIngredientToTemplate}><Plus className="mr-2 h-4 w-4" /> Aggiungi</Button>
+                    </div>
                   </div>
                 </div>
 
@@ -553,6 +751,35 @@ export default function Semilavorati() {
               <Label>Nome prodotto</Label>
               <Input {...addForm.register('nome')} placeholder="es. Salsa piccante" />
             </div>
+            <div>
+              <Label>Categoria</Label>
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button variant="outline" className="justify-start w-full">
+                    {addForm.watch('categoria') ? addForm.watch('categoria') : 'Seleziona categoria'}
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="p-0 w-64">
+                  <Command>
+                    <CommandInput placeholder="Cerca categoria" />
+                    <CommandList>
+                      <CommandEmpty>Nessuna categoria</CommandEmpty>
+                      <CommandGroup>
+                        {categories.map(c => (
+                          <CommandItem key={c} onSelect={() => addForm.setValue('categoria', c)}>
+                            {c}
+                          </CommandItem>
+                        ))}
+                      </CommandGroup>
+                    </CommandList>
+                  </Command>
+                </PopoverContent>
+              </Popover>
+            </div>
+            <div>
+              <Label>Note</Label>
+              <Input {...addForm.register('note')} placeholder="Eventuali note" />
+            </div>
             <div className="space-y-2">
               <Label>Ingredienti</Label>
               {addFields.fields.map((f, idx) => (
@@ -569,6 +796,54 @@ export default function Semilavorati() {
           <DialogFooter>
             <Button type="button" variant="outline" onClick={() => setShowAddDialog(false)}>Annulla</Button>
             <Button onClick={addTemplateSubmit}>Salva prodotto</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Dialog modifica prodotto */}
+      <Dialog open={showEditDialog.open} onOpenChange={(open) => setShowEditDialog(open ? showEditDialog : { open })}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Modifica semilavorato</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div>
+              <Label>Nome prodotto</Label>
+              <Input {...editForm.register('nome')} />
+            </div>
+            <div>
+              <Label>Categoria</Label>
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button variant="outline" className="justify-start w-full">
+                    {editForm.watch('categoria') ? editForm.watch('categoria') : 'Seleziona categoria'}
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="p-0 w-64">
+                  <Command>
+                    <CommandInput placeholder="Cerca categoria" />
+                    <CommandList>
+                      <CommandEmpty>Nessuna categoria</CommandEmpty>
+                      <CommandGroup>
+                        {categories.map(c => (
+                          <CommandItem key={c} onSelect={() => editForm.setValue('categoria', c)}>
+                            {c}
+                          </CommandItem>
+                        ))}
+                      </CommandGroup>
+                    </CommandList>
+                  </Command>
+                </PopoverContent>
+              </Popover>
+            </div>
+            <div>
+              <Label>Note</Label>
+              <Input {...editForm.register('note')} />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setShowEditDialog({ open: false })}>Annulla</Button>
+            <Button onClick={handleEditSubmit}>Salva modifiche</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
