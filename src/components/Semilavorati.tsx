@@ -608,22 +608,29 @@ export default function Semilavorati() {
                 </Popover>
               </div>
             </div>
-            {/* Elenco prodotti (filtrati per categoria se selezionata) */}
-            <div className="flex flex-wrap gap-2">
-              {filteredTemplates.map(t => (
-                <div key={t.nome} className="flex items-center gap-2">
-                  <Button className="flex-1" variant={selectedProduct === t.nome ? 'default' : 'outline'} onClick={() => setSelectedProduct(t.nome)}>
-                    {t.nome}{t.categoria ? ` · ${t.categoria}` : ''}
-                  </Button>
-                  <Button variant="outline" size="sm" onClick={() => setShowEditDialog({ open: true, nome: t.nome })}>Modifica</Button>
-                  <Button variant="destructive" size="icon" title="Rimuovi prodotto" onClick={() => handleRemoveProduct(t.nome)}>
-                    <Trash className="h-4 w-4" />
-                  </Button>
-                </div>
-              ))}
-              <Button variant="outline" onClick={() => setShowAddDialog(true)}>
-                <Plus className="mr-2 h-4 w-4" /> Aggiungi prodotto
-              </Button>
+            <div className="border-t my-4" />
+            <div>
+              <Label className="text-base font-semibold">Prodotti della categoria selezionata</Label>
+              <Card className="mt-3">
+                <CardContent className="pt-6">
+                  <div className="flex flex-wrap gap-2">
+                    {filteredTemplates.map(t => (
+                      <div key={t.nome} className="flex items-center gap-2">
+                        <Button className="flex-1" variant={selectedProduct === t.nome ? 'default' : 'outline'} onClick={() => setSelectedProduct(t.nome)}>
+                          {t.nome}{t.categoria ? ` · ${t.categoria}` : ''}
+                        </Button>
+                        <Button variant="outline" size="sm" onClick={() => setShowEditDialog({ open: true, nome: t.nome })}>Modifica</Button>
+                        <Button variant="destructive" size="icon" title="Rimuovi prodotto" onClick={() => handleRemoveProduct(t.nome)}>
+                          <Trash className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    ))}
+                    <Button variant="outline" onClick={() => setShowAddDialog(true)}>
+                      <Plus className="mr-2 h-4 w-4" /> Aggiungi prodotto
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
             </div>
 
             {/* Form registrazione */}
