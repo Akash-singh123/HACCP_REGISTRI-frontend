@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useIncomingFoodsStore, IncomingFood } from '@/store/incomingFoodsStore';
+import { useSemiProductsStore } from '@/store/semiProductsStore';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -13,12 +14,15 @@ import { googleDriveManager } from '@/lib/googleDrive';
 
 export default function IncomingFoods() {
   const { items, addItem, updateItem, removeItem, loadFromCache } = useIncomingFoodsStore();
+  const { templates, loadFromCache: loadSemiFromCache } = useSemiProductsStore();
   const [form, setForm] = useState({ nome: '', dataAcquisto: '', lotto: '', fornitore: '' });
   const [editId, setEditId] = useState<string | null>(null);
   const [openNameSuggest, setOpenNameSuggest] = useState(false);
   const [nameQuery, setNameQuery] = useState('');
 
   useEffect(() => { loadFromCache(); }, [loadFromCache]);
+  // Assicura che i semilavorati siano caricati dal cache per avere ingredienti aggiornati
+  useEffect(() => { loadSemiFromCache(); }, [loadSemiFromCache]);
 
   const grouped = useMemo(() => {
     const map = new Map<string, IncomingFood[]>();
@@ -32,17 +36,39 @@ export default function IncomingFoods() {
     return map;
   }, [items]);
 
-  const allFoodNames = useMemo(() => {
-    const setNames = new Set<string>();
-    items.forEach(i => { const n = i.nome.trim(); if (n) setNames.add(n); });
-    return Array.from(setNames).sort((a, b) => a.localeCompare(b, 'it', { sensitivity: 'base' }));
-  }, [items]);
+  // Costruisce l’elenco dei nomi ingrediente dai semilavorati, senza duplicati (case-insensitive, spazi, accenti)
+  const allIngredientNames = useMemo(() => {
+    const normalize = (s: string) => s
+      .trim()
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '') // rimuove accenti
+      .replace(/\s+/g, ' '); // normalizza spazi multipli
+    const map = new Map<string, string>();
+    for (const t of templates) {
+      for (const ing of t.ingredienti) {
+        const original = (ing.nome || '').trim();
+        if (!original) continue;
+        const key = normalize(original);
+        if (!map.has(key)) map.set(key, original);
+      }
+    }
+    const list = Array.from(map.values());
+    return list.sort((a, b) => a.localeCompare(b, 'it', { sensitivity: 'base' }));
+  }, [templates]);
 
   const filteredNames = useMemo(() => {
     const q = nameQuery.trim();
-    if (!q) return allFoodNames;
-    return allFoodNames.filter(n => n.toLowerCase().startsWith(q.toLowerCase()));
-  }, [allFoodNames, nameQuery]);
+    if (!q) return allIngredientNames;
+    const normalize = (s: string) => s
+      .trim()
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/\s+/g, ' ');
+    const qNorm = normalize(q);
+    return allIngredientNames.filter(n => normalize(n).includes(qNorm));
+  }, [allIngredientNames, nameQuery]);
 
   const resetForm = () => setForm({ nome: '', dataAcquisto: '', lotto: '', fornitore: '' });
 
@@ -149,7 +175,7 @@ export default function IncomingFoods() {
               <div className="flex gap-2">
                 <Input
                   value={form.nome}
-                  onFocus={() => { if (!form.nome) { setNameQuery(''); setOpenNameSuggest(true); } }}
+                  onFocus={() => { setNameQuery(form.nome || ''); setOpenNameSuggest(true); }}
                   onChange={e => {
                     const val = e.target.value;
                     setForm(f => ({ ...f, nome: val }));
