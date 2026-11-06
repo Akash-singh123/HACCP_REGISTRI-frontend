@@ -1,0 +1,24 @@
+# supabase/config.toml
+# Configurazione minima del progetto Supabase.
+# verify_jwt = true: il gateway rifiuta token non validi PRIMA di eseguire la funzione
+# (primo strato difensivo; il secondo strato è guard.ts che verifica appartenenza/ruolo/licenza).
+
+project_id = "haccp-allergeni"
+
+[functions.allergen-table]
+verify_jwt = true
+
+[functions.generate-records-pdf]
+verify_jwt = true
+
+[functions.haccp-data]
+verify_jwt = true
+
+[functions.haccp-docs]
+verify_jwt = true
+
+[functions.admin-clients]
+verify_jwt = true
+
+[storage]
+enabled = true

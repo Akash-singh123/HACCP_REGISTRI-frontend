@@ -1,4 +1,6 @@
-import { googleDriveManager } from './googleDrive';
+import { activeDocs } from './api';
+import { DOC_FOLDERS, base64ToBlob } from './docs';
+import type { jsPDF } from 'jspdf';
 
 export interface OsaSignatureInfo {
   exists: boolean;
@@ -17,35 +19,22 @@ export interface SignatureOptions {
 }
 
 /**
- * Recupera la firma OSA da Google Drive se disponibile
+ * Recupera la firma OSA archiviata nell'area documenti dell'azienda, se presente.
  */
 export async function getOsaSignature(): Promise<OsaSignatureInfo> {
   try {
-    const { rootId } = await googleDriveManager.getHaccpFolderStructure();
-    
-    // Cerca cartella Firma_OSA
-    const signatureFolder = await googleDriveManager.findFileByName('Firma_OSA', rootId);
-    if (!signatureFolder) {
-      return { exists: false };
-    }
-
-    // Cerca file firma esistente (PNG, JPG, JPEG)
-    const signatureFiles = await googleDriveManager.listFiles(signatureFolder.id);
-    const signatureFile = signatureFiles.find(f => 
-      f.name.toLowerCase().match(/\.(png|jpg|jpeg)$/i)
-    );
-
+    const { files } = await activeDocs.list(DOC_FOLDERS.firma);
+    const signatureFile = files.find((f) => /\.(png|jpe?g)$/i.test(f.name));
     if (!signatureFile) {
       return { exists: false };
     }
 
-    // Scarica il file firma
-    const blob = await googleDriveManager.downloadFile(signatureFile.id);
-    
+    const { base64, mimeType } = await activeDocs.download(signatureFile.path);
+
     return {
       exists: true,
-      blob,
-      fileName: signatureFile.name
+      blob: base64ToBlob(base64, mimeType),
+      fileName: signatureFile.name,
     };
   } catch (error) {
     console.error('Errore recupero firma OSA:', error);
@@ -66,7 +55,7 @@ export async function getOsaSignature(): Promise<OsaSignatureInfo> {
  * @returns true se l'inserimento è riuscito, altrimenti false
  */
 export async function addSignatureToPdf(
-  doc: any, // jsPDF instance
+  doc: jsPDF,
   signatureBlob: Blob,
   x: number = 20,
   y: number = 20,
@@ -104,9 +93,9 @@ export async function addSignatureToPdf(
         // carica immagine originale
         const img0 = new Image();
         img0.src = imageDataUrl;
-        await new Promise((resolve, reject) => {
-          img0.onload = resolve as any;
-          img0.onerror = reject as any;
+        await new Promise<void>((resolve, reject) => {
+          img0.onload = () => resolve();
+          img0.onerror = () => reject(new Error('Impossibile caricare l\'immagine della firma'));
         });
         canvas.width = img0.naturalWidth;
         canvas.height = img0.naturalHeight;
@@ -171,9 +160,9 @@ export async function addSignatureToPdf(
     // Carica l’immagine (eventualmente ritagliata) per ottenere dimensioni naturali
     const img = new Image();
     img.src = imageDataUrl;
-    await new Promise((resolve, reject) => {
-      img.onload = resolve as any;
-      img.onerror = reject as any;
+    await new Promise<void>((resolve, reject) => {
+      img.onload = () => resolve();
+      img.onerror = () => reject(new Error('Impossibile caricare l\'immagine della firma'));
     });
 
     // Calcolo del box effettivo con margine

@@ -1,131 +1,251 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
+import { Skeleton } from '@/components/ui/skeleton';
+import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { HaccpForm } from '@/components/HaccpForm';
 import { AutoGenerator } from '@/components/AutoGenerator';
 import { RecordsList } from '@/components/RecordsList';
-import GoogleDriveSync from '@/components/GoogleDriveSync';
+import DocumentsArchive from '@/components/DocumentsArchive';
 import { CompanyInfo } from '@/types/haccp';
 import { getRecords } from '@/lib/haccpUtils';
-import { Building2, FileText, Zap, Archive, Settings, Cloud, PenTool } from 'lucide-react';
+import { api } from '@/lib/api';
+import { useAuth } from '@/hooks/useAuth';
+import {
+  Archive,
+  Building2,
+  ChefHat,
+  ClipboardList,
+  Clock,
+  CreditCard,
+  FolderOpen,
+  Loader2,
+  LogOut,
+  MoreHorizontal,
+  PackagePlus,
+  Printer,
+  Settings,
+  ShieldAlert,
+  ShieldCheck,
+  Signature,
+  TrendingUp,
+  Zap,
+  type LucideIcon,
+} from 'lucide-react';
 import Semilavorati from '@/components/Semilavorati';
 import IncomingFoods from '@/components/IncomingFoods';
 import OsaSignature from '@/components/OsaSignature';
+import Allergeni from '@/components/Allergeni';
+import Billing from '@/components/Billing';
+import PrinterManager from '@/components/printing/PrinterManager';
 import { startAutoRegisterScheduler } from '@/lib/autoRegisters';
-import { googleDriveManager } from '@/lib/googleDrive';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
+import { toast } from 'sonner';
+
+type TabKey = 'daily' | 'auto' | 'archive' | 'ingresso' | 'cloud' | 'semilavorati' | 'firma-osa' | 'allergeni' | 'stampanti' | 'abbonamento';
+
+interface NavItem {
+  key: TabKey;
+  label: string;
+  short: string;
+  description: string;
+  icon: LucideIcon;
+}
+
+const NAV_ITEMS: NavItem[] = [
+  { key: 'daily', label: 'Compilazione Giornaliera', short: 'Compila', description: 'Annota temperatura e sanificazione di oggi.', icon: ClipboardList },
+  { key: 'archive', label: 'Archivio e Consultazione', short: 'Archivio', description: 'Consulta e scarica i registri per mese e semestre.', icon: Archive },
+  { key: 'ingresso', label: 'Alimenti in Ingresso', short: 'Ingresso', description: 'Registra gli alimenti con lotto, fornitore e scadenza.', icon: PackagePlus },
+  { key: 'semilavorati', label: 'Prodotti Semilavorati', short: 'Semilavorati', description: 'Gestisci prodotti, categorie e registra i lotti di produzione.', icon: ChefHat },
+  { key: 'allergeni', label: 'Tabella Allergeni', short: 'Allergeni', description: 'Tabella allergeni per prodotto, pronta da stampare.', icon: ShieldAlert },
+  { key: 'cloud', label: 'Archivio Documenti', short: 'Documenti', description: 'Tutti i documenti PDF archiviati nel cloud.', icon: FolderOpen },
+  { key: 'firma-osa', label: 'Firma OSA', short: 'Firma OSA', description: "Apponi la firma dell'operatore OSA.", icon: Signature },
+  { key: 'stampanti', label: 'Stampanti ed Etichette', short: 'Stampanti', description: 'Collega le stampanti e configura i formati delle etichette.', icon: Printer },
+  { key: 'abbonamento', label: 'Abbonamento', short: 'Piano', description: 'Stato del piano e gestione del pagamento.', icon: CreditCard },
+];
+
+const AUTO_ITEM: NavItem = {
+  key: 'auto',
+  label: 'Generazione Automatica',
+  short: 'Auto',
+  description: 'Genera automaticamente i registri del periodo.',
+  icon: Zap,
+};
+
+const MOBILE_PRIMARY: TabKey[] = ['daily', 'archive', 'ingresso', 'semilavorati'];
 
 export default function HaccpDashboard() {
-  const [company, setCompany] = useState<CompanyInfo>({
-    name: 'SINGH SUKH GURINDER',
-    piva: '13572610965',
-    address: ''
-  });
+  const { company: authCompany, signOut, refreshCompany } = useAuth();
   const [refreshTrigger, setRefreshTrigger] = useState(0);
   const [showSettings, setShowSettings] = useState(false);
   const [autoUnlocked, setAutoUnlocked] = useState(false);
-  const [activeTab, setActiveTab] = useState<'daily'|'auto'|'archive'|'ingresso'|'cloud'|'semilavorati'|'firma-osa'>('daily');
-  const [driveDialogOpen, setDriveDialogOpen] = useState(false);
-  const [driveConnected, setDriveConnected] = useState(false);
+  const [activeTab, setActiveTab] = useState<TabKey>('daily');
+  const [moreOpen, setMoreOpen] = useState(false);
+  const [stats, setStats] = useState<{ total: number; thisMonth: number; thisYear: number; lastRecord: string | null }>({
+    total: 0,
+    thisMonth: 0,
+    thisYear: 0,
+    lastRecord: null,
+  });
+  const [profileForm, setProfileForm] = useState({ name: '', piva: '', address: '' });
+  const [logoUrl, setLogoUrl] = useState<string | null>(null);
+  const [savingProfile, setSavingProfile] = useState(false);
+  const [uploadingLogo, setUploadingLogo] = useState(false);
+  const [statsLoading, setStatsLoading] = useState(true);
   const secretClicksRef = useRef<number>(0);
   const secretTimerRef = useRef<number | null>(null);
 
-  // Load company info from localStorage
-  useEffect(() => {
-    const savedSettings = localStorage.getItem('haccp_settings');
-    if (savedSettings) {
-      const settings = JSON.parse(savedSettings);
-      setCompany(settings.company);
-    }
-  }, []);
+  // Info azienda per i componenti (nome, P.IVA, indirizzo) derivate dal tenant attivo.
+  const companyInfo: CompanyInfo = useMemo(() => {
+    const info = (authCompany?.info ?? {}) as Record<string, unknown>;
+    return {
+      name: authCompany?.name ?? '',
+      piva: info.piva ? String(info.piva) : '',
+      address: info.address ? String(info.address) : '',
+    };
+  }, [authCompany]);
 
-  // Rimosso ogni sblocco evidente (query, tastiera, long-press) per nascondere meglio la funzione
+  const navItems = useMemo(() => (autoUnlocked ? [...NAV_ITEMS.slice(0, 1), { ...AUTO_ITEM, description: AUTO_ITEM.description }, ...NAV_ITEMS.slice(1)] : NAV_ITEMS), [autoUnlocked]);
 
-  // Prompt iniziale Drive + redirect automatico a Semilavorati
+  const activeItem = useMemo(() => navItems.find((n) => n.key === activeTab) ?? NAV_ITEMS[0], [navItems, activeTab]);
+
+  // Sincronizza il form impostazioni con l'azienda attiva.
   useEffect(() => {
+    if (!authCompany) return;
+    const info = (authCompany.info ?? {}) as Record<string, unknown>;
+    setProfileForm({
+      name: authCompany.name,
+      piva: info.piva ? String(info.piva) : '',
+      address: info.address ? String(info.address) : '',
+    });
+    setLogoUrl(authCompany.logoUrl ?? null);
+  }, [authCompany]);
+
+  // Statistiche registri (ricaricate a ogni aggiornamento).
+  useEffect(() => {
+    let cancelled = false;
     (async () => {
+      setStatsLoading(true);
       try {
-        await googleDriveManager.initialize();
-        const connected = await googleDriveManager.checkExistingToken();
-        if (connected) {
-          setDriveConnected(true);
-          setActiveTab('semilavorati');
-        } else {
-          setDriveDialogOpen(true);
-        }
+        const records = await getRecords();
+        if (cancelled) return;
+        const now = new Date();
+        const thisMonth = records.filter((r) => {
+          const d = new Date(r.date);
+          return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
+        }).length;
+        const thisYear = records.filter((r) => new Date(r.date).getFullYear() === now.getFullYear()).length;
+        const lastRecord = records.length
+          ? records.slice().sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())[0].date
+          : null;
+        setStats({ total: records.length, thisMonth, thisYear, lastRecord });
       } catch (e) {
-        console.error('Init Google Drive fallito:', e);
+        console.error('Errore caricamento statistiche:', e);
+      } finally {
+        if (!cancelled) setStatsLoading(false);
       }
     })();
     return () => {
-      if (secretTimerRef.current) {
-        window.clearTimeout(secretTimerRef.current);
-        secretTimerRef.current = null;
-      }
+      cancelled = true;
     };
-  }, []);
-
-  const saveCompanyInfo = () => {
-    const settings = { company };
-    localStorage.setItem('haccp_settings', JSON.stringify(settings));
-    setShowSettings(false);
-  };
-
-  const handleRecordUpdate = () => {
-    setRefreshTrigger(prev => prev + 1);
-  };
-
-  const getStats = () => {
-    const records = getRecords();
-    const currentMonth = new Date().getMonth();
-    const currentYear = new Date().getFullYear();
-    
-    const thisMonth = records.filter(record => {
-      const date = new Date(record.date);
-      return date.getMonth() === currentMonth && date.getFullYear() === currentYear;
-    }).length;
-
-    const thisYear = records.filter(record => {
-      const date = new Date(record.date);
-      return date.getFullYear() === currentYear;
-    }).length;
-
-    return {
-      total: records.length,
-      thisMonth,
-      thisYear,
-      lastRecord: records.length > 0 ? records.sort((a, b) => 
-        new Date(b.date).getTime() - new Date(a.date).getTime()
-      )[0].date : null
-    };
-  };
-
-  const stats = getStats();
+  }, [refreshTrigger]);
 
   // Avvio scheduler automatico registri HACCP (Temperature e Sanificazione)
   useEffect(() => {
-    const { cancel } = startAutoRegisterScheduler(company);
-    return () => { try { cancel(); } catch {} };
-  }, [company]);
-
-  const handleDriveConnect = async () => {
-    try {
-      const ok = await googleDriveManager.signIn();
-      setDriveConnected(ok);
-      if (ok) {
-        setDriveDialogOpen(false);
-        setActiveTab('semilavorati');
+    if (!companyInfo.name) return;
+    const { cancel } = startAutoRegisterScheduler(companyInfo);
+    return () => {
+      try {
+        cancel();
+      } catch {
+        /* cleanup fallito, ignora */
       }
+    };
+  }, [companyInfo]);
+
+  // Ritorno da Stripe Checkout / portale: aggiorna lo stato della licenza.
+  // Il webhook può arrivare con qualche secondo di ritardo, quindi ritentiamo.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const flag = params.get('billing');
+    if (!flag) return;
+
+    // Rimuove il parametro dall'URL per non rieseguire al reload.
+    params.delete('billing');
+    const query = params.toString();
+    window.history.replaceState({}, '', `${window.location.pathname}${query ? `?${query}` : ''}`);
+
+    let timer: number | undefined;
+
+    if (flag === 'cancel') {
+      toast.info('Pagamento annullato', { description: 'Non è stato addebitato nulla.' });
+    } else if (flag === 'success') {
+      setActiveTab('abbonamento');
+      toast.success('Pagamento completato', { description: 'Stiamo attivando il tuo abbonamento…' });
+      let attempts = 0;
+      timer = window.setInterval(() => {
+        attempts += 1;
+        void refreshCompany();
+        if (attempts >= 6 && timer) window.clearInterval(timer);
+      }, 2500);
+      void refreshCompany();
+    } else if (flag === 'portal') {
+      setActiveTab('abbonamento');
+      void refreshCompany();
+    }
+
+    return () => {
+      if (timer) window.clearInterval(timer);
+    };
+  }, [refreshCompany]);
+
+  const saveCompanyInfo = async () => {
+    if (!authCompany) return;
+    setSavingProfile(true);
+    try {
+      const info = { ...(authCompany.info ?? {}), piva: profileForm.piva, address: profileForm.address };
+      await api.company.updateProfile(authCompany.id, { name: profileForm.name, info });
+      await refreshCompany();
+      setShowSettings(false);
+      toast.success('Impostazioni salvate');
     } catch (e) {
-      console.error('Connessione Drive fallita:', e);
+      console.error(e);
+      toast.error('Errore nel salvataggio delle impostazioni');
+    } finally {
+      setSavingProfile(false);
     }
   };
 
-  // Trigger nascosto aggiuntivo: triplo click sul sottotitolo
+  const handleLogoUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file || !authCompany) return;
+    setUploadingLogo(true);
+    try {
+      const url = await api.company.uploadLogo(authCompany.id, file);
+      setLogoUrl(url);
+      await refreshCompany();
+      toast.success('Logo aggiornato');
+    } catch (e) {
+      console.error(e);
+      toast.error('Errore nel caricamento del logo');
+    } finally {
+      setUploadingLogo(false);
+      event.target.value = '';
+    }
+  };
+
+  const handleRecordUpdate = () => {
+    setRefreshTrigger((prev) => prev + 1);
+  };
+
+  const goTo = (key: TabKey) => {
+    setActiveTab(key);
+    setMoreOpen(false);
+  };
+
+  // Trigger nascosto: triplo click sul sottotitolo sblocca la generazione automatica.
   const handleSecretClick = () => {
     if (secretTimerRef.current) {
       window.clearTimeout(secretTimerRef.current);
@@ -142,221 +262,344 @@ export default function HaccpDashboard() {
     }, 1500);
   };
 
+  useEffect(() => {
+    return () => {
+      if (secretTimerRef.current) {
+        window.clearTimeout(secretTimerRef.current);
+        secretTimerRef.current = null;
+      }
+    };
+  }, []);
+
+  const statCards: { label: string; value: React.ReactNode; icon: LucideIcon; tone: string; tile: string }[] = [
+    {
+      label: 'Registri totali',
+      value: statsLoading ? '—' : stats.total,
+      icon: ClipboardList,
+      tone: 'text-primary',
+      tile: 'bg-primary/10 text-primary',
+    },
+    {
+      label: 'Questo mese',
+      value: statsLoading ? '—' : stats.thisMonth,
+      icon: TrendingUp,
+      tone: 'text-success',
+      tile: 'bg-success/10 text-success',
+    },
+    {
+      label: "Quest'anno",
+      value: statsLoading ? '—' : stats.thisYear,
+      icon: Archive,
+      tone: 'text-info',
+      tile: 'bg-info/10 text-info',
+    },
+    {
+      label: 'Ultimo registro',
+      value: stats.lastRecord ? new Date(stats.lastRecord).toLocaleDateString('it-IT') : 'Nessuno',
+      icon: Clock,
+      tone: 'text-warning',
+      tile: 'bg-warning/10 text-warning',
+    },
+  ];
+
+  const renderContent = () => {
+    switch (activeTab) {
+      case 'daily':
+        return <HaccpForm company={companyInfo} onRecordSaved={handleRecordUpdate} />;
+      case 'auto':
+        return <AutoGenerator company={companyInfo} onGenerationComplete={handleRecordUpdate} />;
+      case 'archive':
+        return <RecordsList company={companyInfo} refreshTrigger={refreshTrigger} />;
+      case 'ingresso':
+        return <IncomingFoods />;
+      case 'cloud':
+        return <DocumentsArchive />;
+      case 'semilavorati':
+        return <Semilavorati />;
+      case 'firma-osa':
+        return <OsaSignature />;
+      case 'allergeni':
+        return <Allergeni />;
+      case 'stampanti':
+        return <PrinterManager />;
+      case 'abbonamento':
+        return <Billing />;
+      default:
+        return null;
+    }
+  };
+
   return (
-    <div className="min-h-screen bg-gray-50">
-      {/* Header */}
-      <div className="bg-white shadow-sm border-b">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex justify-between items-center py-6">
-            <div>
-              <h1
-                className="text-3xl font-bold text-gray-900"
-              >
-                Sistema HACCP
-              </h1>
-              <p className="text-gray-600" onClick={handleSecretClick}>Gestione Automatizzata Registri</p>
+    <div className="app-shell">
+      {/* ── Header ───────────────────────────────────────────── */}
+      <header className="sticky top-0 z-40 border-b border-border/60 bg-background/85 backdrop-blur-xl">
+        <div className="mx-auto flex h-16 max-w-7xl items-center gap-3 px-4 sm:px-6 lg:px-8">
+          <div className="flex min-w-0 items-center gap-3">
+            <div className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-gradient-to-br from-primary to-cyan-500 text-primary-foreground shadow-glow">
+              <ShieldCheck className="h-5 w-5" />
             </div>
-            <div className="flex items-center gap-4">
-              <div className="text-right">
-                <div className="font-medium">{company.name}</div>
-                <div className="text-sm text-gray-500">P.IVA: {company.piva}</div>
-              </div>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setShowSettings(!showSettings)}
-              >
-                <Settings className="w-4 h-4 mr-2" />
-                Impostazioni
-              </Button>
+            <div className="min-w-0 leading-tight">
+              <h1 className="truncate text-[15px] font-bold tracking-tight sm:text-base">Sistema HACCP</h1>
+              <p className="hidden cursor-default select-none text-xs text-muted-foreground sm:block" onClick={handleSecretClick}>
+                Gestione Automatizzata Registri
+              </p>
             </div>
           </div>
-        </div>
-      </div>
 
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {/* Company Settings */}
+          <div className="ml-auto flex items-center gap-1.5 sm:gap-2">
+            <div className="hidden items-center gap-2.5 rounded-full border border-border/70 bg-card py-1.5 pl-1.5 pr-3.5 md:flex">
+              {logoUrl ? (
+                <img src={logoUrl} alt="Logo azienda" className="h-7 w-7 rounded-full object-contain" />
+              ) : (
+                <span className="grid h-7 w-7 place-items-center rounded-full bg-accent text-accent-foreground">
+                  <Building2 className="h-3.5 w-3.5" />
+                </span>
+              )}
+              <div className="leading-tight">
+                <div className="max-w-[180px] truncate text-xs font-semibold">{companyInfo.name || '—'}</div>
+                <div className="text-[11px] text-muted-foreground">P.IVA {companyInfo.piva || '—'}</div>
+              </div>
+            </div>
+            <Button
+              variant={showSettings ? 'secondary' : 'ghost'}
+              size="icon"
+              onClick={() => setShowSettings((v) => !v)}
+              title="Impostazioni azienda"
+              aria-label="Impostazioni azienda"
+            >
+              <Settings />
+            </Button>
+            <Button variant="ghost" size="icon" onClick={() => signOut()} title="Esci" aria-label="Esci">
+              <LogOut />
+            </Button>
+          </div>
+        </div>
+
+        {/* Navigazione desktop */}
+        <nav className="hidden border-t border-border/60 lg:block">
+          <div className="mx-auto flex max-w-7xl items-center gap-1 overflow-x-auto px-4 py-2 sm:px-6 lg:px-8">
+            {navItems.map((item) => {
+              const active = activeTab === item.key;
+              return (
+                <button
+                  key={item.key}
+                  type="button"
+                  onClick={() => goTo(item.key)}
+                  aria-current={active ? 'page' : undefined}
+                  className={[
+                    'inline-flex shrink-0 items-center gap-2 rounded-full px-3.5 py-2 text-sm font-medium transition-all duration-200',
+                    active
+                      ? 'bg-primary text-primary-foreground shadow-sm'
+                      : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground',
+                  ].join(' ')}
+                >
+                  <item.icon className="h-4 w-4" />
+                  {item.short}
+                </button>
+              );
+            })}
+          </div>
+        </nav>
+      </header>
+
+      <main className="mx-auto w-full max-w-7xl px-4 pb-28 pt-6 sm:px-6 lg:px-8 lg:pb-10">
+        {/* Intestazione sezione */}
+        <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h2 className="text-xl font-bold tracking-tight sm:text-2xl">{activeItem.label}</h2>
+            <p className="mt-0.5 text-sm text-muted-foreground">{activeItem.description}</p>
+          </div>
+          {autoUnlocked && (
+            <Badge variant="secondary" className="gap-1.5">
+              <Zap className="h-3 w-3" />
+              Modalità avanzata attiva
+            </Badge>
+          )}
+        </div>
+
+        {/* Impostazioni azienda */}
         {showSettings && (
-          <Card className="mb-6">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Building2 className="w-5 h-5" />
+          <Card className="mb-6 animate-slide-up border-border/70 shadow-card">
+            <CardHeader className="flex-row items-center justify-between space-y-0">
+              <CardTitle className="flex items-center gap-2 text-lg">
+                <span className="grid h-8 w-8 place-items-center rounded-lg bg-primary/10 text-primary">
+                  <Building2 className="h-4 w-4" />
+                </span>
                 Informazioni Azienda
               </CardTitle>
+              <Button variant="ghost" size="sm" onClick={() => setShowSettings(false)}>
+                Chiudi
+              </Button>
             </CardHeader>
             <CardContent className="space-y-4">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <Label htmlFor="companyName">Nome Azienda</Label>
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                <div className="space-y-1.5">
+                  <Label htmlFor="companyName" className="field-label">
+                    Nome azienda
+                  </Label>
                   <Input
                     id="companyName"
-                    value={company.name}
-                    onChange={(e) => setCompany(prev => ({ ...prev, name: e.target.value }))}
+                    value={profileForm.name}
+                    onChange={(e) => setProfileForm((prev) => ({ ...prev, name: e.target.value }))}
                   />
                 </div>
-                <div>
-                  <Label htmlFor="companyPiva">P.IVA</Label>
+                <div className="space-y-1.5">
+                  <Label htmlFor="companyPiva" className="field-label">
+                    P.IVA
+                  </Label>
                   <Input
                     id="companyPiva"
-                    value={company.piva}
-                    onChange={(e) => setCompany(prev => ({ ...prev, piva: e.target.value }))}
+                    value={profileForm.piva}
+                    onChange={(e) => setProfileForm((prev) => ({ ...prev, piva: e.target.value }))}
                   />
                 </div>
               </div>
-              <div>
-                <Label htmlFor="companyAddress">Indirizzo (opzionale)</Label>
+              <div className="space-y-1.5">
+                <Label htmlFor="companyAddress" className="field-label">
+                  Indirizzo (opzionale)
+                </Label>
                 <Input
                   id="companyAddress"
-                  value={company.address || ''}
-                  onChange={(e) => setCompany(prev => ({ ...prev, address: e.target.value }))}
+                  value={profileForm.address}
+                  onChange={(e) => setProfileForm((prev) => ({ ...prev, address: e.target.value }))}
                 />
               </div>
-              <Button onClick={saveCompanyInfo}>
-                Salva Impostazioni
+              <div className="space-y-1.5">
+                <Label htmlFor="companyLogo" className="field-label">
+                  Logo aziendale (PNG/JPG)
+                </Label>
+                <div className="flex items-center gap-3">
+                  {logoUrl && <img src={logoUrl} alt="Anteprima logo" className="h-10 w-10 rounded-lg border border-border/70 object-contain" />}
+                  <Input
+                    id="companyLogo"
+                    type="file"
+                    accept="image/png,image/jpeg"
+                    onChange={handleLogoUpload}
+                    disabled={uploadingLogo}
+                    className="flex-1"
+                  />
+                  {uploadingLogo && <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />}
+                </div>
+              </div>
+              <Button onClick={saveCompanyInfo} disabled={savingProfile}>
+                {savingProfile && <Loader2 className="h-4 w-4 animate-spin" />}
+                Salva impostazioni
               </Button>
+
+              <div className="flex flex-wrap items-center gap-3 border-t border-border/60 pt-4">
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-semibold">Stampanti ed etichette</p>
+                  <p className="text-xs text-muted-foreground">
+                    Collega le stampanti del ristorante e configura i formati delle etichette.
+                  </p>
+                </div>
+                <Button variant="outline" onClick={() => { setShowSettings(false); setActiveTab('stampanti'); }}>
+                  <Printer className="h-4 w-4" />
+                  Gestisci stampanti
+                </Button>
+              </div>
             </CardContent>
           </Card>
         )}
 
-        {/* Stats Dashboard */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
-          <Card>
-            <CardContent className="p-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm font-medium text-gray-600">Registri Totali</p>
-                  <p className="text-2xl font-bold text-blue-600">{stats.total}</p>
+        {/* Statistiche */}
+        <div className="mb-8 grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
+          {statCards.map((s) => (
+            <Card key={s.label} className="hover-lift border-border/70 shadow-card">
+              <CardContent className="flex items-center justify-between gap-3 p-4 sm:p-5">
+                <div className="min-w-0">
+                  <p className="truncate text-xs font-medium text-muted-foreground sm:text-sm">{s.label}</p>
+                  {statsLoading ? (
+                    <Skeleton className="mt-2 h-7 w-14" />
+                  ) : (
+                    <p className={`mt-1 truncate text-xl font-bold sm:text-2xl ${s.tone}`}>{s.value}</p>
+                  )}
                 </div>
-                <FileText className="w-8 h-8 text-blue-500" />
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardContent className="p-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm font-medium text-gray-600">Questo Mese</p>
-                  <p className="text-2xl font-bold text-green-600">{stats.thisMonth}</p>
-                </div>
-                <Archive className="w-8 h-8 text-green-500" />
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardContent className="p-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm font-medium text-gray-600">Quest'Anno</p>
-                  <p className="text-2xl font-bold text-purple-600">{stats.thisYear}</p>
-                </div>
-                <Zap className="w-8 h-8 text-purple-500" />
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardContent className="p-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm font-medium text-gray-600">Ultimo Registro</p>
-                  <p className="text-sm font-bold text-orange-600">
-                    {stats.lastRecord ? 
-                      new Date(stats.lastRecord).toLocaleDateString('it-IT') : 
-                      'Nessuno'
-                    }
-                  </p>
-                </div>
-                <Badge variant={stats.lastRecord ? 'default' : 'secondary'}>
-                  {stats.lastRecord ? 'Aggiornato' : 'Vuoto'}
-                </Badge>
-              </div>
-            </CardContent>
-          </Card>
+                <span className={`grid h-10 w-10 shrink-0 place-items-center rounded-xl ${s.tile} sm:h-11 sm:w-11`}>
+                  <s.icon className="h-5 w-5" />
+                </span>
+              </CardContent>
+            </Card>
+          ))}
         </div>
 
-        {/* Main Tabs */}
-        <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as any)} className="space-y-6">
-          <TabsList className="w-full flex-wrap sm:flex-nowrap h-auto sm:h-10 overflow-x-auto sm:overflow-visible gap-1">
-            <TabsTrigger value="daily" className="flex items-center gap-2 whitespace-normal text-xs sm:text-sm px-2 sm:px-3 py-1 sm:py-1.5 flex-shrink-0">
-              <FileText className="w-4 h-4" />
-              Compilazione Giornaliera
-            </TabsTrigger>
-            {autoUnlocked && (
-              <TabsTrigger value="auto" className="flex items-center gap-2 whitespace-normal text-xs sm:text-sm px-2 sm:px-3 py-1 sm:py-1.5 flex-shrink-0">
-                <Zap className="w-4 h-4" />
-                Generazione Automatica
-              </TabsTrigger>
-            )}
-            <TabsTrigger value="archive" className="flex items-center gap-2 whitespace-normal text-xs sm:text-sm px-2 sm:px-3 py-1 sm:py-1.5 flex-shrink-0">
-              <Archive className="w-4 h-4" />
-              Archivio e Consultazione
-            </TabsTrigger>
-            <TabsTrigger value="ingresso" className="flex items-center gap-2 whitespace-normal text-xs sm:text-sm px-2 sm:px-3 py-1 sm:py-1.5 flex-shrink-0">
-              <Archive className="w-4 h-4" />
-              Alimenti in Ingresso
-            </TabsTrigger>
-            <TabsTrigger value="cloud" className="flex items-center gap-2 whitespace-normal text-xs sm:text-sm px-2 sm:px-3 py-1 sm:py-1.5 flex-shrink-0">
-              <Cloud className="w-4 h-4" />
-              Google Drive
-            </TabsTrigger>
-            <TabsTrigger value="semilavorati" className="flex items-center gap-2 whitespace-normal text-xs sm:text-sm px-2 sm:px-3 py-1 sm:py-1.5 flex-shrink-0">
-              <FileText className="mr-2 h-4 w-4" /> Prodotti Semilavorati
-            </TabsTrigger>
-            <TabsTrigger value="firma-osa" className="flex items-center gap-2 whitespace-normal text-xs sm:text-sm px-2 sm:px-3 py-1 sm:py-1.5 flex-shrink-0">
-              <PenTool className="w-4 h-4" />
-              Firma OSA
-            </TabsTrigger>
-          </TabsList>
+        {/* Contenuto sezione */}
+        <div key={activeTab} className="animate-fade-in">
+          {renderContent()}
+        </div>
+      </main>
 
-          <TabsContent value="daily">
-            <HaccpForm company={company} onRecordSaved={handleRecordUpdate} />
-          </TabsContent>
-
-          {autoUnlocked && (
-            <TabsContent value="auto">
-              <AutoGenerator company={company} onGenerationComplete={handleRecordUpdate} />
-            </TabsContent>
-          )}
-
-          <TabsContent value="archive">
-            <RecordsList company={company} refreshTrigger={refreshTrigger} />
-          </TabsContent>
-
-          <TabsContent value="ingresso">
-            <IncomingFoods />
-          </TabsContent>
-
-          <TabsContent value="cloud">
-            <GoogleDriveSync company={company} />
-          </TabsContent>
-          <TabsContent value="semilavorati">
-            <Semilavorati />
-          </TabsContent>
-
-          <TabsContent value="firma-osa">
-            <OsaSignature />
-          </TabsContent>
-        </Tabs>
-      </div>
-
-      {/* Dialog connessione Google Drive */}
-      <Dialog open={driveDialogOpen} onOpenChange={setDriveDialogOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Connessione a Google Drive</DialogTitle>
-          </DialogHeader>
-          <p className="text-sm text-muted-foreground">
-            Per salvare e sincronizzare i registri HACCP, collega il tuo account Google Drive.
-          </p>
-          <DialogFooter>
-            <Button onClick={handleDriveConnect}>
-              <Cloud className="w-4 h-4 mr-2" /> Connetti
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      {/* ── Navigazione mobile ───────────────────────────────── */}
+      <nav className="fixed inset-x-0 bottom-0 z-40 border-t border-border/60 bg-background/95 pb-[env(safe-area-inset-bottom)] backdrop-blur-xl lg:hidden">
+        <div className="grid grid-cols-5">
+          {MOBILE_PRIMARY.map((key) => {
+            const item = NAV_ITEMS.find((n) => n.key === key)!;
+            const active = activeTab === key;
+            return (
+              <button
+                key={key}
+                type="button"
+                onClick={() => goTo(key)}
+                className={[
+                  'flex flex-col items-center gap-1 py-2.5 text-[11px] font-medium transition-colors',
+                  active ? 'text-primary' : 'text-muted-foreground',
+                ].join(' ')}
+              >
+                <span className={['grid h-9 w-12 place-items-center rounded-lg transition-colors', active ? 'bg-primary/10' : ''].join(' ')}>
+                  <item.icon className="h-5 w-5" />
+                </span>
+                <span className="truncate">{item.short}</span>
+              </button>
+            );
+          })}
+          <Sheet open={moreOpen} onOpenChange={setMoreOpen}>
+            <button
+              type="button"
+              onClick={() => setMoreOpen(true)}
+              className={[
+                'flex flex-col items-center gap-1 py-2.5 text-[11px] font-medium transition-colors',
+                !MOBILE_PRIMARY.includes(activeTab) ? 'text-primary' : 'text-muted-foreground',
+              ].join(' ')}
+            >
+              <span className={['grid h-9 w-12 place-items-center rounded-lg transition-colors', !MOBILE_PRIMARY.includes(activeTab) ? 'bg-primary/10' : ''].join(' ')}>
+                <MoreHorizontal className="h-5 w-5" />
+              </span>
+              <span>Altro</span>
+            </button>
+            <SheetContent side="bottom" className="rounded-t-2xl pb-8">
+              <SheetHeader className="text-left">
+                <SheetTitle>Altre sezioni</SheetTitle>
+              </SheetHeader>
+              <div className="mt-4 grid gap-2">
+                {navItems
+                  .filter((n) => !MOBILE_PRIMARY.includes(n.key))
+                  .map((item) => {
+                    const active = activeTab === item.key;
+                    return (
+                      <button
+                        key={item.key}
+                        type="button"
+                        onClick={() => goTo(item.key)}
+                        className={[
+                          'flex items-center gap-3 rounded-xl border px-4 py-3 text-left transition-colors',
+                          active ? 'border-primary/40 bg-primary/10' : 'border-border/70 hover:bg-accent',
+                        ].join(' ')}
+                      >
+                        <span className={['grid h-9 w-9 shrink-0 place-items-center rounded-lg', active ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground'].join(' ')}>
+                          <item.icon className="h-4 w-4" />
+                        </span>
+                        <span className="min-w-0">
+                          <span className="block truncate text-sm font-semibold">{item.label}</span>
+                          <span className="block truncate text-xs text-muted-foreground">{item.description}</span>
+                        </span>
+                      </button>
+                    );
+                  })}
+              </div>
+            </SheetContent>
+          </Sheet>
+        </div>
+      </nav>
     </div>
   );
 }

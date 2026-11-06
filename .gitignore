@@ -27,3 +27,7 @@ dist-ssr
 .env
 .env.*
 !.env.example
+
+# Supabase CLI: file temporanei con connection string (contiene la password del DB)
+supabase/.temp
+supabase/.branches

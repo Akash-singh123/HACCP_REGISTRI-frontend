@@ -1,4 +1,5 @@
-import { googleDriveManager } from '@/lib/googleDrive';
+import { activeDocs } from '@/lib/api';
+import { DOC_FOLDERS, blobToBase64 } from '@/lib/docs';
 import { generateMonthlyPDF, generateMonthlySanificationPDF, getRecordsByMonth } from '@/lib/haccpUtils';
 import type { CompanyInfo } from '@/types/haccp';
 import { toast } from 'sonner';
@@ -26,38 +27,30 @@ function buildMonthFileNames(year: number, month: number) {
   };
 }
 
-async function uploadOrUpdatePdf(fileName: string, blob: Blob, parentId: string) {
-  const existing = await googleDriveManager.findFileByName(fileName, parentId);
-  if (existing) {
-    await googleDriveManager.updateFile(existing.id, fileName, blob);
-  } else {
-    await googleDriveManager.uploadFile(fileName, blob, parentId);
-  }
+async function uploadPdf(fileName: string, blob: Blob) {
+  const path = `${DOC_FOLDERS.registri}/${fileName}`;
+  const base64 = await blobToBase64(blob);
+  await activeDocs.upload({ path, base64, mimeType: 'application/pdf' });
 }
 
 async function runOnce(company: CompanyInfo) {
   try {
-    await googleDriveManager.initialize();
-    const connected = await googleDriveManager.checkExistingToken();
-    if (!connected) {
-      console.warn('[AutoRegisters] Drive non connesso, salto generazione/upload');
-      return false;
-    }
-    const { rootId } = await googleDriveManager.getHaccpFolderStructure();
     const today = new Date();
     const year = today.getFullYear();
     const month = today.getMonth() + 1; // 1..12
 
-    const records = getRecordsByMonth(year, month);
+    const records = await getRecordsByMonth(year, month);
+    if (!records.length) {
+      console.warn('[AutoRegisters] Nessun registro per il mese corrente, salto l\'aggiornamento');
+      return false;
+    }
+
     const tempDoc = await generateMonthlyPDF(records, company, year, month);
     const saniDoc = await generateMonthlySanificationPDF(records, company, year, month);
-
-    const tempBlob = tempDoc.output('blob');
-    const saniBlob = saniDoc.output('blob');
     const names = buildMonthFileNames(year, month);
 
-    await uploadOrUpdatePdf(names.temp, tempBlob, rootId);
-    await uploadOrUpdatePdf(names.sani, saniBlob, rootId);
+    await uploadPdf(names.temp, tempDoc.output('blob'));
+    await uploadPdf(names.sani, saniDoc.output('blob'));
 
     console.log('[AutoRegisters] Aggiornamento automatico completato');
     toast.success('Aggiornamento registri automatico completato');
@@ -70,7 +63,7 @@ async function runOnce(company: CompanyInfo) {
 }
 
 export function startAutoRegisterScheduler(company: CompanyInfo, timeHHMM?: string) {
-  const configured = timeHHMM || localStorage.getItem('haccp_auto_time') || '20:00';
+  const configured = timeHHMM || '20:00';
 
   // Schedule first run
   const delay = parseTimeToNextDelay(configured);

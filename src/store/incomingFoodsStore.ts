@@ -1,63 +1,61 @@
 import { create } from 'zustand';
+import { activeData } from '@/lib/api';
 
 export interface IncomingFood {
   id: string;
   nome: string;
   lotto: string;
   dataAcquisto: string; // ISO YYYY-MM-DD
+  dataScadenza?: string; // ISO YYYY-MM-DD
   fornitore?: string;
-  createdAt: number; // epoch ms for ordering fallback
+  createdAt: number; // epoch ms per ordinamento
 }
 
 interface IncomingFoodsState {
   items: IncomingFood[];
-  addItem: (item: Omit<IncomingFood, 'id' | 'createdAt'>) => void;
-  updateItem: (id: string, patch: Partial<IncomingFood>) => void;
-  removeItem: (id: string) => void;
-  loadFromCache: () => void;
+  loading: boolean;
+  load: () => Promise<void>;
+  addItem: (item: Omit<IncomingFood, 'id' | 'createdAt'>) => Promise<void>;
+  updateItem: (id: string, patch: Partial<IncomingFood>) => Promise<void>;
+  removeItem: (id: string) => Promise<void>;
 }
 
-const KEY = 'incoming_foods_registry';
-
-function persist(items: IncomingFood[]) {
-  try { localStorage.setItem(KEY, JSON.stringify(items)); } catch {}
-}
-
-function generateId() {
-  return Math.random().toString(36).slice(2) + Date.now().toString(36);
-}
+const sortByDate = (items: IncomingFood[]) =>
+  [...items].sort((a, b) => new Date(a.dataAcquisto).getTime() - new Date(b.dataAcquisto).getTime());
 
 export const useIncomingFoodsStore = create<IncomingFoodsState>((set, get) => ({
   items: [],
-  addItem: (item) => {
-    const next = [
-      ...get().items,
-      { ...item, id: generateId(), createdAt: Date.now() }
-    ];
-    // Ordina cronologicamente per data di acquisto (ascendente)
-    next.sort((a, b) => new Date(a.dataAcquisto).getTime() - new Date(b.dataAcquisto).getTime());
-    set({ items: next });
-    persist(next);
-  },
-  updateItem: (id, patch) => {
-    const next = get().items.map(i => i.id === id ? { ...i, ...patch } : i);
-    next.sort((a, b) => new Date(a.dataAcquisto).getTime() - new Date(b.dataAcquisto).getTime());
-    set({ items: next });
-    persist(next);
-  },
-  removeItem: (id) => {
-    const next = get().items.filter(i => i.id !== id);
-    set({ items: next });
-    persist(next);
-  },
-  loadFromCache: () => {
+  loading: false,
+  load: async () => {
+    set({ loading: true });
     try {
-      const raw = localStorage.getItem(KEY);
-      if (raw) {
-        const parsed = JSON.parse(raw) as IncomingFood[];
-        parsed.sort((a, b) => new Date(a.dataAcquisto).getTime() - new Date(b.dataAcquisto).getTime());
-        set({ items: parsed });
-      }
-    } catch {}
-  }
+      const { items } = await activeData.incoming.list();
+      set({ items: sortByDate(items) });
+    } finally {
+      set({ loading: false });
+    }
+  },
+  addItem: async (item) => {
+    const { id } = await activeData.incoming.upsert(item);
+    const created: IncomingFood = { ...item, id, createdAt: Date.now() };
+    set({ items: sortByDate([...get().items, created]) });
+  },
+  updateItem: async (id, patch) => {
+    const current = get().items.find((i) => i.id === id);
+    if (!current) return;
+    const merged: IncomingFood = { ...current, ...patch };
+    await activeData.incoming.upsert({
+      id,
+      nome: merged.nome,
+      lotto: merged.lotto,
+      dataAcquisto: merged.dataAcquisto,
+      dataScadenza: merged.dataScadenza,
+      fornitore: merged.fornitore,
+    });
+    set({ items: sortByDate(get().items.map((i) => (i.id === id ? merged : i))) });
+  },
+  removeItem: async (id) => {
+    await activeData.incoming.remove(id);
+    set({ items: get().items.filter((i) => i.id !== id) });
+  },
 }));

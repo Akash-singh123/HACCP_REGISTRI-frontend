@@ -1,11 +1,22 @@
+export type EquipmentKind = 'freezer' | 'fridge';
+
+/** Attrezzatura di conservazione dell'azienda (frigorifero o congelatore). */
+export interface Equipment {
+  id: string;
+  kind: EquipmentKind;
+  name: string;
+  position: number;
+}
+
 export interface HaccpRecord {
     id: string;
     date: string; // YYYY-MM-DD format
-    temperatures: {
-      freezer: number; // -18 to -22°C
-      fridge1: number; // 0 to 4°C
-      fridge2: number; // 0 to 4°C
-    };
+    /**
+     * Mappa dinamica delle temperature rilevate: chiave = id attrezzatura,
+     * valore = temperatura in °C. I registri storici usano le chiavi
+     * {freezer, fridge1, fridge2}, mantenute come id delle attrezzature di default.
+     */
+    temperatures: Record<string, number>;
     cleaning: {
       equipment: boolean;
       surfaces: boolean;

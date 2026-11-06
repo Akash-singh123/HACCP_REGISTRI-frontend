@@ -4,89 +4,104 @@
 
 @layer base {
   :root {
-    --background: 0 0% 100%;
-    --foreground: 222.2 84% 4.9%;
+    /* --- Superfici --- */
+    --background: 200 40% 98%;
+    --foreground: 210 45% 12%;
 
     --card: 0 0% 100%;
-    --card-foreground: 222.2 84% 4.9%;
+    --card-foreground: 210 45% 12%;
 
     --popover: 0 0% 100%;
-    --popover-foreground: 222.2 84% 4.9%;
+    --popover-foreground: 210 45% 12%;
 
-    --primary: 222.2 47.4% 11.2%;
-    --primary-foreground: 210 40% 98%;
+    /* --- Brand: blu-teal sanitario --- */
+    --primary: 190 90% 32%;
+    --primary-foreground: 0 0% 100%;
 
-    --secondary: 210 40% 96.1%;
-    --secondary-foreground: 222.2 47.4% 11.2%;
+    --secondary: 195 45% 94%;
+    --secondary-foreground: 195 75% 20%;
 
-    --muted: 210 40% 96.1%;
-    --muted-foreground: 215.4 16.3% 46.9%;
+    --muted: 200 30% 95.5%;
+    --muted-foreground: 205 20% 46%;
 
-    --accent: 210 40% 96.1%;
-    --accent-foreground: 222.2 47.4% 11.2%;
+    --accent: 188 65% 93%;
+    --accent-foreground: 190 85% 22%;
 
-    --destructive: 0 84.2% 60.2%;
-    --destructive-foreground: 210 40% 98%;
+    /* --- Stati semantici --- */
+    --destructive: 0 76% 55%;
+    --destructive-foreground: 0 0% 100%;
 
-    --border: 214.3 31.8% 91.4%;
-    --input: 214.3 31.8% 91.4%;
-    --ring: 222.2 84% 4.9%;
+    --success: 158 68% 34%;
+    --success-foreground: 0 0% 100%;
 
-    --radius: 0.5rem;
+    --warning: 32 94% 47%;
+    --warning-foreground: 28 70% 14%;
 
-    --sidebar-background: 0 0% 98%;
+    --info: 205 88% 46%;
+    --info-foreground: 0 0% 100%;
 
-    --sidebar-foreground: 240 5.3% 26.1%;
+    --border: 200 26% 89%;
+    --input: 200 26% 89%;
+    --ring: 190 90% 32%;
 
-    --sidebar-primary: 240 5.9% 10%;
+    --radius: 0.75rem;
 
-    --sidebar-primary-foreground: 0 0% 98%;
-
-    --sidebar-accent: 240 4.8% 95.9%;
-
-    --sidebar-accent-foreground: 240 5.9% 10%;
-
-    --sidebar-border: 220 13% 91%;
-
-    --sidebar-ring: 217.2 91.2% 59.8%;
+    --sidebar-background: 200 40% 98%;
+    --sidebar-foreground: 210 30% 26%;
+    --sidebar-primary: 190 90% 32%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 188 65% 93%;
+    --sidebar-accent-foreground: 190 85% 22%;
+    --sidebar-border: 200 26% 89%;
+    --sidebar-ring: 190 90% 32%;
   }
 
   .dark {
-    --background: 222.2 84% 4.9%;
-    --foreground: 210 40% 98%;
+    --background: 205 45% 8%;
+    --foreground: 195 30% 96%;
 
-    --card: 222.2 84% 4.9%;
-    --card-foreground: 210 40% 98%;
+    --card: 205 42% 11%;
+    --card-foreground: 195 30% 96%;
 
-    --popover: 222.2 84% 4.9%;
-    --popover-foreground: 210 40% 98%;
+    --popover: 205 42% 11%;
+    --popover-foreground: 195 30% 96%;
 
-    --primary: 210 40% 98%;
-    --primary-foreground: 222.2 47.4% 11.2%;
+    --primary: 187 80% 45%;
+    --primary-foreground: 205 60% 8%;
 
-    --secondary: 217.2 32.6% 17.5%;
-    --secondary-foreground: 210 40% 98%;
+    --secondary: 205 30% 18%;
+    --secondary-foreground: 195 30% 96%;
 
-    --muted: 217.2 32.6% 17.5%;
-    --muted-foreground: 215 20.2% 65.1%;
+    --muted: 205 30% 17%;
+    --muted-foreground: 200 18% 65%;
 
-    --accent: 217.2 32.6% 17.5%;
-    --accent-foreground: 210 40% 98%;
+    --accent: 200 40% 20%;
+    --accent-foreground: 187 70% 80%;
 
-    --destructive: 0 62.8% 30.6%;
-    --destructive-foreground: 210 40% 98%;
+    --destructive: 0 62% 46%;
+    --destructive-foreground: 0 0% 100%;
 
-    --border: 217.2 32.6% 17.5%;
-    --input: 217.2 32.6% 17.5%;
-    --ring: 212.7 26.8% 83.9%;
-    --sidebar-background: 240 5.9% 10%;
-    --sidebar-foreground: 240 4.8% 95.9%;
-    --sidebar-primary: 224.3 76.3% 48%;
-    --sidebar-primary-foreground: 0 0% 100%;
-    --sidebar-accent: 240 3.7% 15.9%;
-    --sidebar-accent-foreground: 240 4.8% 95.9%;
-    --sidebar-border: 240 3.7% 15.9%;
-    --sidebar-ring: 217.2 91.2% 59.8%;
+    --success: 158 55% 40%;
+    --success-foreground: 0 0% 100%;
+
+    --warning: 32 85% 52%;
+    --warning-foreground: 28 70% 12%;
+
+    --info: 205 80% 55%;
+    --info-foreground: 0 0% 100%;
+
+    --border: 205 28% 20%;
+    --input: 205 28% 20%;
+    --ring: 187 80% 45%;
+
+    --sidebar-background: 205 45% 9%;
+    --sidebar-foreground: 195 25% 90%;
+    --sidebar-primary: 187 80% 45%;
+    --sidebar-primary-foreground: 205 60% 8%;
+    --sidebar-accent: 205 30% 18%;
+    --sidebar-accent-foreground: 187 70% 80%;
+    --sidebar-border: 205 28% 20%;
+    --sidebar-ring: 187 80% 45%;
   }
 }
 
@@ -95,7 +110,99 @@
     @apply border-border;
   }
 
+  html {
+    -webkit-text-size-adjust: 100%;
+    scroll-behavior: smooth;
+  }
+
   body {
-    @apply bg-background text-foreground;
+    @apply bg-background text-foreground antialiased;
+    font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11';
+    text-rendering: optimizeLegibility;
+  }
+
+  h1,
+  h2,
+  h3,
+  h4 {
+    @apply tracking-tight;
+  }
+
+  /* Scrollbar coerente su tutta l'app */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: hsl(var(--border)) transparent;
+  }
+
+  *::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+
+  *::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  *::-webkit-scrollbar-thumb {
+    background-color: hsl(var(--border));
+    border-radius: 9999px;
+    border: 2px solid transparent;
+    background-clip: content-box;
+  }
+
+  *::-webkit-scrollbar-thumb:hover {
+    background-color: hsl(var(--muted-foreground) / 0.5);
+    background-clip: content-box;
+  }
+
+  ::selection {
+    background-color: hsl(var(--primary) / 0.18);
+  }
+}
+
+@layer components {
+  /* Sfondo applicazione: gradiente soft con accento brand */
+  .app-shell {
+    @apply min-h-screen bg-background;
+    background-image:
+      radial-gradient(1200px 600px at 100% -10%, hsl(var(--primary) / 0.07), transparent 60%),
+      radial-gradient(900px 500px at -10% 0%, hsl(187 90% 45% / 0.06), transparent 55%);
+  }
+
+  /* Card con bordo soft ed elevazione discreta */
+  .surface {
+    @apply rounded-xl border border-border/70 bg-card shadow-card;
+  }
+
+  /* Micro-interazione: sollevamento al hover */
+  .hover-lift {
+    @apply transition-all duration-200;
+  }
+
+  .hover-lift:hover {
+    @apply -translate-y-0.5 shadow-elevated;
+  }
+
+  /* Titolo di sezione */
+  .section-title {
+    @apply text-base font-semibold text-foreground;
+  }
+
+  /* Etichetta di campo form */
+  .field-label {
+    @apply text-xs font-semibold uppercase tracking-wide text-muted-foreground;
+  }
+}
+
+@media print {
+  @page {
+    size: A4 landscape;
+    margin: 8mm;
+  }
+
+  body {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+    background: #ffffff !important;
   }
 }

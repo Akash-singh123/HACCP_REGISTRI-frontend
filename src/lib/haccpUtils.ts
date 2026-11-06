@@ -1,10 +1,30 @@
-import { HaccpRecord, CompanyInfo } from '@/types/haccp';
+import { HaccpRecord, CompanyInfo, Equipment, EquipmentKind } from '@/types/haccp';
 import jsPDF from 'jspdf';
 import JSZip from 'jszip';
 import { getOsaSignature, addSignatureToPdf } from './osaSignature';
+import { activeData } from './api';
+
+/** Range HACCP di riferimento per tipologia di attrezzatura. */
+export const EQUIPMENT_RANGES: Record<
+  EquipmentKind,
+  { inputMin: number; inputMax: number; targetMin: number; targetMax: number; rangeLabel: string }
+> = {
+  freezer: { inputMin: -25, inputMax: -15, targetMin: -22, targetMax: -18, rangeLabel: '-18 °C / -22 °C' },
+  fridge: { inputMin: 0, inputMax: 4, targetMin: 0, targetMax: 4, rangeLabel: '0 °C / +4 °C' },
+};
+
+/** Etichetta breve della tipologia di attrezzatura. */
+export const EQUIPMENT_KIND_LABELS: Record<EquipmentKind, string> = {
+  freezer: 'Congelatore',
+  fridge: 'Frigorifero',
+};
+
+/** Valore di temperatura proposto di default per una nuova rilevazione. */
+export const defaultTemperatureForKind = (kind: EquipmentKind): number =>
+  kind === 'freezer' ? -20 : 2;
 
 // Generate random temperature within HACCP ranges
-export const generateRandomTemperature = (type: 'freezer' | 'fridge'): number => {
+export const generateRandomTemperature = (type: EquipmentKind): number => {
   if (type === 'freezer') {
     // -18°C to -22°C
     return Math.round((Math.random() * 4 + 18) * -10) / 10;
@@ -12,6 +32,22 @@ export const generateRandomTemperature = (type: 'freezer' | 'fridge'): number =>
     // 0°C to 4°C
     return Math.round(Math.random() * 40) / 10;
   }
+};
+
+/** Attrezzature configurate per l'azienda attiva (ordine: congelatori, poi frigoriferi). */
+export const getEquipment = async (): Promise<Equipment[]> => {
+  const { equipment } = await activeData.equipment.list();
+  return equipment;
+};
+
+/** Tronca un testo per farlo rientrare nella larghezza indicata (font corrente). */
+const fitText = (pdf: jsPDF, text: string, maxWidth: number): string => {
+  if (pdf.getTextWidth(text) <= maxWidth) return text;
+  let truncated = text;
+  while (truncated.length > 1 && pdf.getTextWidth(`${truncated}…`) > maxWidth) {
+    truncated = truncated.slice(0, -1);
+  }
+  return `${truncated}…`;
 };
 
 // Generate default cleaning status (mostly OK)
@@ -68,57 +104,67 @@ export const createHaccpRecord = (
   };
 };
 
-// LocalStorage utilities
-export const saveRecord = (record: HaccpRecord): void => {
-  const records = getRecords();
-  const existingIndex = records.findIndex(r => r.date === record.date);
-  
-  if (existingIndex >= 0) {
-    records[existingIndex] = { ...record, updatedAt: new Date().toISOString() };
-  } else {
-    records.push(record);
-  }
-  
-  localStorage.setItem('haccp_records', JSON.stringify(records));
+// Accesso ai dati dei registri: backend Supabase, isolato per azienda.
+// Tutte le operazioni sono asincrone e passano dal layer API (Zero Trust Client).
+export const getRecords = async (): Promise<HaccpRecord[]> => {
+  const { records } = await activeData.records.list();
+  return records;
 };
 
-export const getRecords = (): HaccpRecord[] => {
-  const stored = localStorage.getItem('haccp_records');
-  return stored ? JSON.parse(stored) : [];
-};
-
-export const deleteRecordByDate = (date: string): void => {
-  const records = getRecords().filter(r => r.date !== date);
-  localStorage.setItem('haccp_records', JSON.stringify(records));
-};
-
-export const deleteRecordsByMonth = (year: number, month: number): void => {
-  const records = getRecords().filter(r => {
-    const d = new Date(r.date);
-    return !(d.getFullYear() === year && d.getMonth() === month - 1);
+export const saveRecord = async (record: HaccpRecord): Promise<void> => {
+  await activeData.records.upsert({
+    date: record.date,
+    temperatures: record.temperatures,
+    cleaning: record.cleaning,
+    notes: record.notes,
+    signature: record.signature,
   });
-  localStorage.setItem('haccp_records', JSON.stringify(records));
 };
 
-export const deleteAllRecords = (): void => {
-  localStorage.removeItem('haccp_records');
+export const saveRecords = async (records: HaccpRecord[]): Promise<void> => {
+  if (!records.length) return;
+  await activeData.records.upsertMany(
+    records.map((record) => ({
+      date: record.date,
+      temperatures: record.temperatures,
+      cleaning: record.cleaning,
+      notes: record.notes,
+      signature: record.signature,
+    }))
+  );
 };
 
-export const getRecordsByMonth = (year: number, month: number): HaccpRecord[] => {
-  const records = getRecords();
+export const deleteRecordByDate = async (date: string): Promise<void> => {
+  await activeData.records.deleteByDate(date);
+};
+
+export const deleteRecordsByMonth = async (year: number, month: number): Promise<void> => {
+  await activeData.records.deleteByMonth(year, month);
+};
+
+export const deleteAllRecords = async (): Promise<void> => {
+  await activeData.records.deleteAll();
+};
+
+export const getRecordsByMonth = async (year: number, month: number): Promise<HaccpRecord[]> => {
+  const records = await getRecords();
   return records.filter(record => {
     const date = new Date(record.date);
     return date.getFullYear() === year && date.getMonth() === month - 1;
   });
 };
 
-export const getRecordByDate = (date: string): HaccpRecord | undefined => {
-  const records = getRecords();
+export const getRecordByDate = async (date: string): Promise<HaccpRecord | undefined> => {
+  const records = await getRecords();
   return records.find(record => record.date === date);
 };
 
 // PDF Generation - Single Day Temperature
-export const generatePDF = async (record: HaccpRecord, company: CompanyInfo): Promise<jsPDF> => {
+export const generatePDF = async (
+  record: HaccpRecord,
+  company: CompanyInfo,
+  equipment?: Equipment[]
+): Promise<jsPDF> => {
   const pdf = new jsPDF('landscape', 'mm', 'a4');
   const date = new Date(record.date);
   const monthNames = [
@@ -152,20 +198,24 @@ export const generatePDF = async (record: HaccpRecord, company: CompanyInfo): Pr
     pdf.text(day.toString(), startX + day * cellWidth - 2, startY - 2);
   }
   
-  // Temperature rows
-  const tempRows = [
-    { label: 'C1', value: record.temperatures.freezer },
-    { label: 'F1', value: record.temperatures.fridge1 },
-    { label: 'F2', value: record.temperatures.fridge2 }
-  ];
+  // Temperature rows (una riga per attrezzatura configurata)
+  const equipmentList = equipment ?? (await getEquipment());
+  const tempRows = equipmentList.map((item) => ({
+    label: item.name,
+    value: record.temperatures[item.id],
+  }));
   
   tempRows.forEach((row, index) => {
     const y = startY + (index + 1) * cellHeight;
-    pdf.text(row.label, startX, y);
+    pdf.setFontSize(7);
+    pdf.text(fitText(pdf, row.label, 26), startX, y);
     
     // Fill temperature for current day
-    const currentDay = date.getDate();
-    pdf.text(`${row.value}°`, startX + currentDay * cellWidth - 2, y);
+    if (typeof row.value === 'number' && Number.isFinite(row.value)) {
+      const currentDay = date.getDate();
+      pdf.setFontSize(8);
+      pdf.text(`${row.value}°`, startX + currentDay * cellWidth - 2, y);
+    }
   });
   
   // Signature row
@@ -208,7 +258,7 @@ export const generatePDF = async (record: HaccpRecord, company: CompanyInfo): Pr
   
   // Ensure bottom closing line of table
   const tableBottomY = sigY + cellHeight;
-  const tableRightX = startX + labelColWidth + 31 * dayColWidth;
+  const tableRightX = startX + 32 * cellWidth;
   pdf.line(startX, tableBottomY, tableRightX, tableBottomY);
   
   return pdf;
@@ -316,7 +366,13 @@ export const generateSanificationPDF = async (record: HaccpRecord, company: Comp
 };
 
 // PDF Generation - Monthly Temperature Report
-export const generateMonthlyPDF = async (records: HaccpRecord[], company: CompanyInfo, year: number, month: number): Promise<jsPDF> => {
+export const generateMonthlyPDF = async (
+  records: HaccpRecord[],
+  company: CompanyInfo,
+  year: number,
+  month: number,
+  equipment?: Equipment[]
+): Promise<jsPDF> => {
   const pdf = new jsPDF('landscape', 'mm', 'a4');
   const monthNames = [
     'Gennaio', 'Febbraio', 'Marzo', 'Aprile', 'Maggio', 'Giugno',
@@ -338,11 +394,16 @@ export const generateMonthlyPDF = async (records: HaccpRecord[], company: Compan
   pdf.text(`P.IVA: ${company.piva}`, 15, 49);
   
   // Table setup - adjusted to fit all 31 days within A4 landscape
+  // La colonna delle etichette è più larga per ospitare i nomi delle attrezzature.
   const startX = 10;
   const startY = 60;
-  const labelColWidth = 22;
-  const dayColWidth = 8.2; // Reduced to fit all days
+  const labelColWidth = 34;
+  const dayColWidth = 7.9; // Reduced to fit all days
   const cellHeight = 6;
+
+  // Una riga per ogni attrezzatura configurata (nome assegnato dall'utente).
+  const equipmentList = equipment ?? (await getEquipment());
+  const tempRows = equipmentList.map((item) => ({ id: item.id, label: item.name }));
   
   // Draw table borders
   pdf.setLineWidth(0.5);
@@ -367,16 +428,15 @@ export const generateMonthlyPDF = async (records: HaccpRecord[], company: Compan
     pdf.text(dayText, centerX, startY - 2);
   }
   
-  // Temperature rows: C1, F1, F2
-  const tempRows = ['C1', 'F1', 'F2'];
-  
-  tempRows.forEach((label, rowIndex) => {
+  // Temperature rows: una riga per attrezzatura
+  tempRows.forEach((row, rowIndex) => {
     const y = startY + rowIndex * cellHeight;
     
     // Label cell
     pdf.rect(startX, y, labelColWidth, cellHeight);
     pdf.setFont('helvetica', 'bold');
-    pdf.text(label, startX + 2, y + cellHeight/2 + 1);
+    pdf.setFontSize(5.5);
+    pdf.text(fitText(pdf, row.label, labelColWidth - 3), startX + 1.5, y + cellHeight/2 + 1);
     
     // Temperature cells for each day
     for (let day = 1; day <= 31; day++) {
@@ -388,13 +448,8 @@ export const generateMonthlyPDF = async (records: HaccpRecord[], company: Compan
       const record = records.find(r => r.date === dateStr);
       
       if (record) {
-        let temp: number;
-        switch (label) {
-          case 'C1': temp = record.temperatures.freezer; break;
-          case 'F1': temp = record.temperatures.fridge1; break;
-          case 'F2': temp = record.temperatures.fridge2; break;
-          default: temp = 0;
-        }
+        const temp = record.temperatures[row.id];
+        if (typeof temp !== 'number' || !Number.isFinite(temp)) continue;
         
         pdf.setFont('helvetica', 'normal');
         pdf.setFontSize(6);
@@ -649,6 +704,7 @@ export const generateMonthlySanificationPDF = async (records: HaccpRecord[], com
 
 export const generateZipArchive = async (records: HaccpRecord[], company: CompanyInfo): Promise<Blob> => {
   const zip = new JSZip();
+  const equipment = await getEquipment();
   
   // Group records by month
   const recordsByMonth = records.reduce((acc, record) => {
@@ -664,7 +720,7 @@ export const generateZipArchive = async (records: HaccpRecord[], company: Compan
     const [year, month] = monthKey.split('-').map(Number);
     
     // Temperature PDF
-    const tempPdf = await generateMonthlyPDF(monthRecords, company, year, month);
+    const tempPdf = await generateMonthlyPDF(monthRecords, company, year, month, equipment);
     const tempPdfBlob = tempPdf.output('blob');
     zip.file(`HACCP_Temperature_${monthKey}.pdf`, tempPdfBlob);
     

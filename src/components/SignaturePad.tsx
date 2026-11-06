@@ -134,10 +134,10 @@ export const SignaturePad: React.FC<SignaturePadProps> = ({
           <canvas
             ref={canvasRef}
             className="border border-gray-200 rounded cursor-crosshair touch-none"
-            onMouseDown={startDrawing as any}
-            onMouseMove={draw as any}
-            onMouseUp={stopDrawing as any}
-            onMouseLeave={stopDrawing as any}
+            onMouseDown={(e) => startDrawing(e.nativeEvent)}
+            onMouseMove={(e) => draw(e.nativeEvent)}
+            onMouseUp={(e) => stopDrawing(e.nativeEvent)}
+            onMouseLeave={(e) => stopDrawing(e.nativeEvent)}
           />
         </div>
 

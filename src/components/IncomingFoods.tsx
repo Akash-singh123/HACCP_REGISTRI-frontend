@@ -1,28 +1,53 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useIncomingFoodsStore, IncomingFood } from '@/store/incomingFoodsStore';
 import { useSemiProductsStore } from '@/store/semiProductsStore';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Badge } from '@/components/ui/badge';
+import { Separator } from '@/components/ui/separator';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { toast } from 'sonner';
-import { Trash, Save, Edit3, Plus, Upload, Download } from 'lucide-react';
+import { Trash2, Save, Pencil, Plus, Upload, Download, ScanLine, Camera, PackageOpen, Truck, CalendarClock } from 'lucide-react';
 import { Popover, PopoverTrigger, PopoverContent } from '@/components/ui/popover';
 import { Command, CommandInput, CommandList, CommandEmpty, CommandGroup, CommandItem } from '@/components/ui/command';
-import { googleDriveManager } from '@/lib/googleDrive';
+import { DOC_FOLDERS, readTextFile, writeTextFile } from '@/lib/docs';
+import BarcodeScannerDialog from '@/components/BarcodeScannerDialog';
+import LabelScanDialog from '@/components/LabelScanDialog';
+import { useConfirm } from '@/components/ConfirmDialog';
+import { parseBarcode } from '@/lib/barcode';
+import { cn } from '@/lib/utils';
+
+const REGISTRY_FILE = 'Registro_Alimenti_Ingresso.csv';
+
+const EMPTY_FORM = { nome: '', dataAcquisto: '', lotto: '', dataScadenza: '', fornitore: '' };
+
+/** Giorni mancanti alla scadenza (null se non impostata o non valida). */
+function daysToExpiry(value?: string): number | null {
+  if (!value) return null;
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return null;
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  d.setHours(0, 0, 0, 0);
+  return Math.round((d.getTime() - today.getTime()) / 86_400_000);
+}
 
 export default function IncomingFoods() {
-  const { items, addItem, updateItem, removeItem, loadFromCache } = useIncomingFoodsStore();
-  const { templates, loadFromCache: loadSemiFromCache } = useSemiProductsStore();
-  const [form, setForm] = useState({ nome: '', dataAcquisto: '', lotto: '', fornitore: '' });
+  const { items, addItem, updateItem, removeItem, load } = useIncomingFoodsStore();
+  const { templates, load: loadSemi } = useSemiProductsStore();
+  const { confirm, confirmDialog } = useConfirm();
+  const [form, setForm] = useState({ ...EMPTY_FORM });
   const [editId, setEditId] = useState<string | null>(null);
   const [openNameSuggest, setOpenNameSuggest] = useState(false);
   const [nameQuery, setNameQuery] = useState('');
+  const [scannerOpen, setScannerOpen] = useState(false);
+  const [labelOpen, setLabelOpen] = useState(false);
 
-  useEffect(() => { loadFromCache(); }, [loadFromCache]);
-  // Assicura che i semilavorati siano caricati dal cache per avere ingredienti aggiornati
-  useEffect(() => { loadSemiFromCache(); }, [loadSemiFromCache]);
+  useEffect(() => { load(); }, [load]);
+  // Assicura che i semilavorati siano caricati per avere gli ingredienti aggiornati
+  useEffect(() => { loadSemi(); }, [loadSemi]);
 
   const grouped = useMemo(() => {
     const map = new Map<string, IncomingFood[]>();
@@ -70,29 +95,89 @@ export default function IncomingFoods() {
     return allIngredientNames.filter(n => normalize(n).includes(qNorm));
   }, [allIngredientNames, nameQuery]);
 
-  const resetForm = () => setForm({ nome: '', dataAcquisto: '', lotto: '', fornitore: '' });
+  const resetForm = () => {
+    setForm({ ...EMPTY_FORM });
+    setEditId(null);
+  };
 
-  const onSave = () => {
+  const onSave = async () => {
     if (!form.nome.trim() || !form.dataAcquisto || !form.lotto.trim()) {
       return toast.error('Compila Nome alimento, Data di acquisto e Lotto');
     }
-    if (editId) {
-      updateItem(editId, { nome: form.nome.trim(), dataAcquisto: form.dataAcquisto, lotto: form.lotto.trim(), fornitore: form.fornitore.trim() || undefined });
-      toast.success('Alimento aggiornato');
-      setEditId(null);
-    } else {
-      addItem({ nome: form.nome.trim(), dataAcquisto: form.dataAcquisto, lotto: form.lotto.trim(), fornitore: form.fornitore.trim() || undefined });
-      toast.success('Alimento registrato');
+    try {
+      const dataScadenza = form.dataScadenza || undefined;
+      if (editId) {
+        await updateItem(editId, { nome: form.nome.trim(), dataAcquisto: form.dataAcquisto, lotto: form.lotto.trim(), dataScadenza, fornitore: form.fornitore.trim() || undefined });
+        toast.success('Alimento aggiornato');
+        setEditId(null);
+      } else {
+        await addItem({ nome: form.nome.trim(), dataAcquisto: form.dataAcquisto, lotto: form.lotto.trim(), dataScadenza, fornitore: form.fornitore.trim() || undefined });
+        toast.success('Alimento registrato');
+      }
+      resetForm();
+    } catch (e) {
+      console.error(e);
+      toast.error('Errore durante il salvataggio dell\'alimento');
     }
-    resetForm();
   };
 
   const onEdit = (it: IncomingFood) => {
     setEditId(it.id);
-    setForm({ nome: it.nome, dataAcquisto: it.dataAcquisto, lotto: it.lotto, fornitore: it.fornitore || '' });
+    setForm({ nome: it.nome, dataAcquisto: it.dataAcquisto, lotto: it.lotto, dataScadenza: it.dataScadenza || '', fornitore: it.fornitore || '' });
   };
 
-  // ---- Google Drive Sync: Registro Alimenti in Ingresso (CSV) ----
+  const onDelete = (it: IncomingFood) => {
+    confirm({
+      title: 'Eliminare questo alimento?',
+      description: `${it.nome} · lotto ${it.lotto}. L'operazione non può essere annullata.`,
+      confirmLabel: 'Elimina',
+      destructive: true,
+      onConfirm: async () => {
+        try {
+          await removeItem(it.id);
+          toast.success('Alimento eliminato');
+          if (editId === it.id) resetForm();
+        } catch (e) {
+          console.error(e);
+          toast.error('Errore durante l\'eliminazione');
+        }
+      },
+    });
+  };
+
+  // ---- Scansione codice a barre: compila lotto e scadenza ----
+  const onBarcodeDetected = (text: string) => {
+    const parsed = parseBarcode(text);
+    const patch: Partial<typeof form> = {};
+    if (parsed.lot) patch.lotto = parsed.lot;
+    if (parsed.expiry) patch.dataScadenza = parsed.expiry;
+
+    if (Object.keys(patch).length === 0) {
+      toast.warning('Codice letto, ma nessun lotto o scadenza riconosciuto', {
+        description: `Contenuto: ${text.slice(0, 80)}`,
+      });
+      return;
+    }
+    setForm((f) => ({ ...f, ...patch }));
+    toast.success('Codice acquisito', {
+      description: [
+        parsed.lot ? `Lotto: ${parsed.lot}` : null,
+        parsed.expiry ? `Scadenza: ${parsed.expiry}` : null,
+      ].filter(Boolean).join(' · '),
+    });
+  };
+
+  const onLabelApply = (patch: { nome?: string; lotto?: string; dataScadenza?: string; fornitore?: string }) => {
+    setForm((f) => ({
+      nome: patch.nome ?? f.nome,
+      dataAcquisto: f.dataAcquisto,
+      lotto: patch.lotto ?? f.lotto,
+      dataScadenza: patch.dataScadenza ?? f.dataScadenza,
+      fornitore: patch.fornitore ?? f.fornitore,
+    }));
+  };
+
+  // ---- Registro Alimenti in Ingresso (CSV) archiviato su Supabase Storage ----
   function escapeCell(val?: string) {
     const s = (val || '').replace(/\r|\n/g, ' ').trim();
     const needsQuotes = /[;",]/.test(s);
@@ -101,56 +186,37 @@ export default function IncomingFoods() {
   }
 
   function buildCsvText() {
-    const header = 'Nome alimento;Lotto;Data di acquisto;Fornitore\n';
+    const header = 'Nome alimento;Lotto;Data di acquisto;Scadenza;Fornitore\n';
     const rows = items.map(i => {
       const date = new Date(i.dataAcquisto).toLocaleDateString('it-IT');
-      return [escapeCell(i.nome), escapeCell(i.lotto), escapeCell(date), escapeCell(i.fornitore || '')].join(';');
+      const expiry = i.dataScadenza ? new Date(i.dataScadenza).toLocaleDateString('it-IT') : '';
+      return [escapeCell(i.nome), escapeCell(i.lotto), escapeCell(date), escapeCell(expiry), escapeCell(i.fornitore || '')].join(';');
     }).join('\n');
     return header + rows + (rows ? '\n' : '');
   }
 
-  const uploadRegistryToDrive = async () => {
+  const saveRegistry = async () => {
     try {
-      await googleDriveManager.initialize();
-      const connected = await googleDriveManager.checkExistingToken();
-      if (!connected) {
-        const ok = await googleDriveManager.signIn();
-        if (!ok) {
-          toast.error('Connessione a Google Drive necessaria');
-          return;
-        }
-      }
-      const { rootId } = await googleDriveManager.getHaccpFolderStructure();
-      const fileName = 'Registro_Alimenti_Ingresso.csv';
-      const csvText = buildCsvText();
-      await googleDriveManager.uploadOrUpdateTextFile(fileName, csvText, rootId, 'text/csv');
-      toast.success('Registro alimenti caricato su Drive');
+      await writeTextFile(DOC_FOLDERS.ingresso, REGISTRY_FILE, buildCsvText(), 'text/csv');
+      toast.success('Registro alimenti salvato nel cloud');
     } catch (e) {
       console.error(e);
-      toast.error('Errore nel caricamento su Drive');
+      toast.error('Errore nel salvataggio del registro');
     }
   };
 
   const downloadRegistryCsv = async () => {
     try {
-      await googleDriveManager.initialize();
-      const connected = await googleDriveManager.checkExistingToken();
-      if (!connected) {
-        toast.error('Connetti Google Drive per scaricare');
+      const text = await readTextFile(DOC_FOLDERS.ingresso, REGISTRY_FILE);
+      if (text === null) {
+        toast.error('Registro non presente nel cloud');
         return;
       }
-      const { rootId } = await googleDriveManager.getHaccpFolderStructure();
-      const fileName = 'Registro_Alimenti_Ingresso.csv';
-      const existing = await googleDriveManager.findFileByName(fileName, rootId);
-      if (!existing) {
-        toast.error('Registro non trovato su Drive');
-        return;
-      }
-      const blob = await googleDriveManager.downloadFile(existing.id);
+      const blob = new Blob([text], { type: 'text/csv;charset=utf-8' });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = fileName;
+      a.download = REGISTRY_FILE;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
@@ -162,16 +228,48 @@ export default function IncomingFoods() {
     }
   };
 
+  const expiringSoon = useMemo(
+    () => items.filter((i) => {
+      const d = daysToExpiry(i.dataScadenza);
+      return d !== null && d >= 0 && d <= 7;
+    }).length,
+    [items]
+  );
+
   return (
     <div className="space-y-6">
-      <Card>
-        <CardHeader>
-          <CardTitle>Alimenti in Ingresso</CardTitle>
+      {/* ------------------------------------------------------------ INSERIMENTO */}
+      <Card className="surface overflow-hidden">
+        <CardHeader className="border-b bg-muted/30">
+          <div className="flex items-start gap-3">
+            <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-primary/10 text-primary">
+              <Truck className="h-5 w-5" />
+            </span>
+            <div className="min-w-0 flex-1">
+              <CardTitle>Registra un alimento in ingresso</CardTitle>
+              <CardDescription>
+                Compila i dati oppure usa la scansione: codice a barre per lotto e scadenza, oppure foto dell'etichetta con lettura AI.
+              </CardDescription>
+            </div>
+            {editId && <Badge variant="outline" className="border-info/30 bg-info/10 text-info">In modifica</Badge>}
+          </div>
         </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <Label>Nome alimento</Label>
+
+        <CardContent className="space-y-5 pt-5">
+          <div className="flex flex-wrap gap-2">
+            <Button variant="secondary" onClick={() => setScannerOpen(true)}>
+              <ScanLine className="mr-2 h-4 w-4" /> Scansiona codice
+            </Button>
+            <Button variant="secondary" onClick={() => setLabelOpen(true)}>
+              <Camera className="mr-2 h-4 w-4" /> Leggi etichetta (AI)
+            </Button>
+          </div>
+
+          <Separator />
+
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+            <div className="md:col-span-2">
+              <Label className="field-label">Nome alimento *</Label>
               <div className="flex gap-2">
                 <Input
                   value={form.nome}
@@ -188,7 +286,7 @@ export default function IncomingFoods() {
                   <PopoverTrigger asChild>
                     <Button type="button" variant="outline">Suggerimenti</Button>
                   </PopoverTrigger>
-                  <PopoverContent className="p-0 w-[320px]">
+                  <PopoverContent className="w-[320px] p-0">
                     <Command>
                       <CommandInput value={nameQuery} onValueChange={setNameQuery} placeholder="Cerca alimento..." />
                       <CommandList>
@@ -209,77 +307,194 @@ export default function IncomingFoods() {
                 </Popover>
               </div>
             </div>
+
             <div>
-              <Label>Data di acquisto</Label>
+              <Label className="field-label">Data di acquisto *</Label>
               <Input type="date" value={form.dataAcquisto} onChange={e => setForm(f => ({ ...f, dataAcquisto: e.target.value }))} />
             </div>
             <div>
-              <Label>Lotto</Label>
+              <Label className="field-label">Lotto *</Label>
               <Input value={form.lotto} onChange={e => setForm(f => ({ ...f, lotto: e.target.value }))} placeholder="es. LTN-20251021-01" />
             </div>
             <div>
-              <Label>Fornitore (opzionale)</Label>
+              <Label className="field-label">Data di scadenza</Label>
+              <Input type="date" value={form.dataScadenza} onChange={e => setForm(f => ({ ...f, dataScadenza: e.target.value }))} />
+            </div>
+            <div>
+              <Label className="field-label">Fornitore</Label>
               <Input value={form.fornitore} onChange={e => setForm(f => ({ ...f, fornitore: e.target.value }))} placeholder="es. Fornitore Srl" />
             </div>
           </div>
-          <div className="flex gap-2">
-            <Button onClick={onSave}><Save className="mr-2 h-4 w-4" /> {editId ? 'Aggiorna' : 'Salva'}</Button>
-            <Button variant="outline" onClick={resetForm}><Plus className="mr-2 h-4 w-4" /> Nuovo</Button>
+
+          <div className="flex flex-wrap gap-2">
+            <Button onClick={onSave} className="shadow-sm">
+              <Save className="mr-2 h-4 w-4" /> {editId ? 'Aggiorna alimento' : 'Salva alimento'}
+            </Button>
+            {editId && (
+              <Button variant="ghost" onClick={resetForm}>
+                <Plus className="mr-2 h-4 w-4 rotate-45" /> Annulla modifica
+              </Button>
+            )}
+            {!editId && (
+              <Button variant="outline" onClick={resetForm}>
+                <Plus className="mr-2 h-4 w-4" /> Pulisci campi
+              </Button>
+            )}
           </div>
         </CardContent>
       </Card>
 
-      <Card>
-        <CardHeader>
-          <div className="flex items-center justify-between">
-            <CardTitle>Archivio alimenti (cronologico)</CardTitle>
-            <div className="flex gap-2">
-              <Button variant="outline" onClick={uploadRegistryToDrive}>
-                <Upload className="mr-2 h-4 w-4" /> Carica registro su Drive
+      {/* ------------------------------------------------------------ ARCHIVIO */}
+      <Card className="surface overflow-hidden">
+        <CardHeader className="border-b bg-muted/30">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex items-start gap-3">
+              <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-info/10 text-info">
+                <PackageOpen className="h-5 w-5" />
+              </span>
+              <div>
+                <CardTitle>Archivio alimenti</CardTitle>
+                <CardDescription>
+                  {items.length} aliment{items.length === 1 ? 'o' : 'i'} registrat{items.length === 1 ? 'o' : 'i'}
+                  {expiringSoon > 0 && (
+                    <span className="ml-2 inline-flex items-center gap-1 font-medium text-warning">
+                      <CalendarClock className="h-3.5 w-3.5" /> {expiringSoon} in scadenza
+                    </span>
+                  )}
+                </CardDescription>
+              </div>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <Button variant="outline" onClick={saveRegistry}>
+                <Upload className="mr-2 h-4 w-4" /> Salva registro
               </Button>
               <Button variant="outline" onClick={downloadRegistryCsv}>
-                <Download className="mr-2 h-4 w-4" /> Scarica CSV da Drive
+                <Download className="mr-2 h-4 w-4" /> Scarica CSV
               </Button>
             </div>
           </div>
         </CardHeader>
-        <CardContent>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Nome alimento</TableHead>
-                <TableHead>Lotto</TableHead>
-                <TableHead>Data di acquisto</TableHead>
-                <TableHead>Fornitore</TableHead>
-                <TableHead className="text-right">Azioni</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {items.length === 0 ? (
+        <CardContent className="pt-5">
+          {/* Vista tabella (desktop) */}
+          <div className="hidden md:block">
+            <Table>
+              <TableHeader>
                 <TableRow>
-                  <TableCell colSpan={5} className="text-center text-muted-foreground">Nessun alimento registrato</TableCell>
+                  <TableHead>Nome alimento</TableHead>
+                  <TableHead>Lotto</TableHead>
+                  <TableHead>Data di acquisto</TableHead>
+                  <TableHead>Scadenza</TableHead>
+                  <TableHead>Fornitore</TableHead>
+                  <TableHead className="text-right">Azioni</TableHead>
                 </TableRow>
-              ) : (
-                items.map(it => (
-                  <TableRow key={it.id}>
-                    <TableCell>{it.nome}</TableCell>
-                    <TableCell>{it.lotto}</TableCell>
-                    <TableCell>{new Date(it.dataAcquisto).toLocaleDateString('it-IT')}</TableCell>
-                    <TableCell>{it.fornitore || '-'}</TableCell>
-                    <TableCell className="text-right">
-                      <Button variant="outline" size="sm" onClick={() => onEdit(it)} className="mr-2"><Edit3 className="h-4 w-4 mr-1" /> Modifica</Button>
-                      <Button variant="destructive" size="sm" onClick={() => removeItem(it.id)}><Trash className="h-4 w-4 mr-1" /> Elimina</Button>
+              </TableHeader>
+              <TableBody>
+                {items.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={6} className="py-10 text-center text-muted-foreground">
+                      Nessun alimento registrato
                     </TableCell>
                   </TableRow>
-                ))
-              )}
-            </TableBody>
-          </Table>
-          <div className="mt-4">
-            <p className="text-sm text-muted-foreground">Gruppi disponibili: {Array.from(grouped.keys()).join(', ') || '—'}</p>
+                ) : (
+                  items.map(it => {
+                    const days = daysToExpiry(it.dataScadenza);
+                    const soon = days !== null && days >= 0 && days <= 7;
+                    const expired = days !== null && days < 0;
+                    return (
+                      <TableRow key={it.id} className={cn(editId === it.id && 'bg-primary/5')}>
+                        <TableCell className="font-medium">{it.nome}</TableCell>
+                        <TableCell><span className="rounded-md bg-muted px-2 py-0.5 font-mono text-xs">{it.lotto}</span></TableCell>
+                        <TableCell>{new Date(it.dataAcquisto).toLocaleDateString('it-IT')}</TableCell>
+                        <TableCell>
+                          {it.dataScadenza ? (
+                            <span className={cn(
+                              'inline-flex items-center gap-1.5 text-sm',
+                              expired && 'font-medium text-destructive',
+                              soon && !expired && 'font-medium text-warning'
+                            )}>
+                              {new Date(it.dataScadenza).toLocaleDateString('it-IT')}
+                              {expired && <Badge variant="outline" className="border-destructive/30 bg-destructive/10 text-destructive">scaduto</Badge>}
+                              {soon && !expired && <Badge variant="outline" className="border-warning/30 bg-warning/10 text-warning">{days}g</Badge>}
+                            </span>
+                          ) : <span className="text-muted-foreground">—</span>}
+                        </TableCell>
+                        <TableCell>{it.fornitore || <span className="text-muted-foreground">—</span>}</TableCell>
+                        <TableCell className="text-right">
+                          <Button variant="ghost" size="icon" onClick={() => onEdit(it)} title="Modifica">
+                            <Pencil className="h-4 w-4" />
+                          </Button>
+                          <Button variant="ghost" size="icon" onClick={() => onDelete(it)} title="Elimina" className="text-destructive hover:text-destructive">
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })
+                )}
+              </TableBody>
+            </Table>
           </div>
+
+          {/* Vista card (mobile) */}
+          <div className="space-y-3 md:hidden">
+            {items.length === 0 ? (
+              <p className="py-8 text-center text-muted-foreground">Nessun alimento registrato</p>
+            ) : (
+              items.map(it => {
+                const days = daysToExpiry(it.dataScadenza);
+                const soon = days !== null && days >= 0 && days <= 7;
+                const expired = days !== null && days < 0;
+                return (
+                  <div key={it.id} className={cn('rounded-xl border bg-card p-4', editId === it.id && 'ring-1 ring-primary/40')}>
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <p className="truncate font-semibold">{it.nome}</p>
+                        <p className="mt-0.5 font-mono text-xs text-muted-foreground">{it.lotto}</p>
+                      </div>
+                      <div className="flex shrink-0 gap-1">
+                        <Button variant="ghost" size="icon" onClick={() => onEdit(it)}><Pencil className="h-4 w-4" /></Button>
+                        <Button variant="ghost" size="icon" onClick={() => onDelete(it)} className="text-destructive hover:text-destructive"><Trash2 className="h-4 w-4" /></Button>
+                      </div>
+                    </div>
+                    <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                      <span>Acquisto {new Date(it.dataAcquisto).toLocaleDateString('it-IT')}</span>
+                      {it.dataScadenza && (
+                        <>
+                          <span aria-hidden>·</span>
+                          <span className={cn(expired && 'font-medium text-destructive', soon && !expired && 'font-medium text-warning')}>
+                            Scad. {new Date(it.dataScadenza).toLocaleDateString('it-IT')}
+                          </span>
+                        </>
+                      )}
+                      {it.fornitore && <><span aria-hidden>·</span><span>{it.fornitore}</span></>}
+                    </div>
+                  </div>
+                );
+              })
+            )}
+          </div>
+
+          {grouped.size > 0 && (
+            <p className="mt-4 text-xs text-muted-foreground">
+              {grouped.size} prodott{grouped.size === 1 ? 'o' : 'i'} distint{grouped.size === 1 ? 'o' : 'i'} in archivio.
+            </p>
+          )}
         </CardContent>
       </Card>
+
+      <BarcodeScannerDialog
+        open={scannerOpen}
+        onOpenChange={setScannerOpen}
+        onDetected={onBarcodeDetected}
+      />
+
+      <LabelScanDialog
+        open={labelOpen}
+        onOpenChange={setLabelOpen}
+        onApply={onLabelApply}
+      />
+
+      {confirmDialog}
     </div>
   );
 }
