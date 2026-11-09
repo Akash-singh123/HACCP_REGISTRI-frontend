@@ -5,11 +5,13 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { ApiError, activeData, type LabelOcrResult } from '@/lib/api';
+import { analyzeLabelOffline, type LocalOcrProgress } from '@/lib/localLabelOcr';
 import { toast } from 'sonner';
 import {
   AlertCircle,
   Camera,
   Check,
+  Cpu,
   Info,
   Loader2,
   RefreshCw,
@@ -26,6 +28,8 @@ interface LabelScanDialogProps {
 }
 
 type Phase = 'idle' | 'working' | 'review' | 'error';
+/** Modalità di lettura: AI (server) oppure OCR locale (sul dispositivo). */
+type Mode = 'ai' | 'offline';
 
 /** Lato massimo (px) a cui ridimensionare la foto prima dell'invio. */
 const MAX_SIDE = 1600;
@@ -84,18 +88,23 @@ const CONFIDENCE_STYLE: Record<LabelOcrResult['confidenza'], string> = {
 };
 
 /**
- * Lettura assistita dell'etichetta: l'utente fotografa l'intera etichetta e
- * l'AI prova a estrarre prodotto, lotto, scadenza e fornitore. I valori sono
- * sempre sottoposti a conferma manuale prima di essere applicati.
+ * Lettura assistita dell'etichetta. Due modalità:
+ *  - "AI": la foto viene inviata a un modello vision sul server;
+ *  - "Offline": il riconoscimento avviene interamente sul dispositivo (Tesseract),
+ *    senza inviare nulla a terzi e senza API key.
+ * I valori sono sempre sottoposti a conferma manuale prima di essere applicati.
  */
 export default function LabelScanDialog({ open, onOpenChange, onApply }: LabelScanDialogProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [phase, setPhase] = useState<Phase>('idle');
+  const [mode, setMode] = useState<Mode>('ai');
   const [preview, setPreview] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notConfigured, setNotConfigured] = useState(false);
+  const [offlineFailed, setOfflineFailed] = useState(false);
   const [confidence, setConfidence] = useState<LabelOcrResult['confidenza'] | null>(null);
   const [note, setNote] = useState<string | null>(null);
+  const [progress, setProgress] = useState<LocalOcrProgress | null>(null);
   const [form, setForm] = useState({ nome: '', lotto: '', dataScadenza: '', fornitore: '' });
 
   const reset = useCallback(() => {
@@ -103,8 +112,10 @@ export default function LabelScanDialog({ open, onOpenChange, onApply }: LabelSc
     setPreview(null);
     setError(null);
     setNotConfigured(false);
+    setOfflineFailed(false);
     setConfidence(null);
     setNote(null);
+    setProgress(null);
     setForm({ nome: '', lotto: '', dataScadenza: '', fornitore: '' });
   }, []);
 
@@ -113,38 +124,90 @@ export default function LabelScanDialog({ open, onOpenChange, onApply }: LabelSc
     if (!open) reset();
   }, [open, reset]);
 
+  const applyResult = (result: LabelOcrResult) => {
+    setForm({
+      nome: result.prodotto ?? '',
+      lotto: result.lotto ?? '',
+      dataScadenza: result.scadenza ?? '',
+      fornitore: result.fornitore ?? '',
+    });
+    setConfidence(result.confidenza);
+    setNote(result.altro ?? null);
+    setPhase('review');
+  };
+
+  const runAi = async (base64: string, mimeType: string) => {
+    const { result } = await activeData.labelOcr.analyze({ imageBase64: base64, mimeType });
+    applyResult(result);
+  };
+
+  const runOffline = async (imageUrl: string) => {
+    const result = await analyzeLabelOffline(imageUrl, setProgress);
+    applyResult(result);
+  };
+
+  const handleFailure = (e: unknown) => {
+    if (mode === 'offline') {
+      setOfflineFailed(true);
+      setError(
+        'La lettura offline non è disponibile su questo dispositivo (risorse non caricate o WebAssembly bloccato). Puoi usare la lettura con AI oppure inserire i dati manualmente.'
+      );
+      setPhase('error');
+      return;
+    }
+
+    const err = e as ApiError;
+    if (err?.code === 'ocr_not_configured') {
+      setNotConfigured(true);
+      setError(
+        'La lettura automatica dell\'etichetta con AI non è attiva su questo server. Puoi provare la lettura sul dispositivo oppure inserire i dati manualmente.'
+      );
+    } else if (err?.code === 'image_too_large') {
+      setError('La foto è troppo pesante. Riprova avvicinandoti di più all\'etichetta.');
+    } else {
+      setError(err?.message || 'Non è stato possibile leggere l\'etichetta. Riprova.');
+    }
+    setPhase('error');
+  };
+
   const analyze = async (file: File) => {
     setPhase('working');
     setError(null);
     setNotConfigured(false);
+    setOfflineFailed(false);
+    setProgress(null);
     try {
       const { base64, mimeType, preview: previewUrl } = await compressImage(file);
       setPreview(previewUrl);
 
-      const { result } = await activeData.labelOcr.analyze({ imageBase64: base64, mimeType });
-
-      setForm({
-        nome: result.prodotto ?? '',
-        lotto: result.lotto ?? '',
-        dataScadenza: result.scadenza ?? '',
-        fornitore: result.fornitore ?? '',
-      });
-      setConfidence(result.confidenza);
-      setNote(result.altro ?? null);
-      setPhase('review');
-    } catch (e) {
-      const err = e as ApiError;
-      if (err?.code === 'ocr_not_configured') {
-        setNotConfigured(true);
-        setError(
-          'La lettura automatica dell\'etichetta non è ancora attiva su questo server. Usa la scansione del codice a barre oppure inserisci i dati manualmente.'
-        );
-      } else if (err?.code === 'image_too_large') {
-        setError('La foto è troppo pesante. Riprova avvicinandoti di più all\'etichetta.');
+      if (mode === 'offline') {
+        await runOffline(previewUrl);
       } else {
-        setError(err?.message || 'Non è stato possibile leggere l\'etichetta. Riprova.');
+        await runAi(base64, mimeType);
       }
-      setPhase('error');
+    } catch (e) {
+      handleFailure(e);
+    }
+  };
+
+  // Ripete la lettura (sulla foto già acquisita) con la modalità indicata.
+  const retryWithMode = async (nextMode: Mode) => {
+    if (!preview) return;
+    setMode(nextMode);
+    setPhase('working');
+    setError(null);
+    setNotConfigured(false);
+    setOfflineFailed(false);
+    setProgress(null);
+    try {
+      if (nextMode === 'offline') {
+        await runOffline(preview);
+      } else {
+        const base64 = preview.split(',')[1] ?? '';
+        await runAi(base64, 'image/jpeg');
+      }
+    } catch (e) {
+      handleFailure(e);
     }
   };
 
@@ -172,19 +235,22 @@ export default function LabelScanDialog({ open, onOpenChange, onApply }: LabelSc
     onOpenChange(false);
   };
 
+  const isOffline = mode === 'offline';
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-lg max-h-[92vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <span className="grid h-8 w-8 place-items-center rounded-lg bg-primary/10 text-primary">
-              <Sparkles className="h-4 w-4" />
+              {isOffline ? <Cpu className="h-4 w-4" /> : <Sparkles className="h-4 w-4" />}
             </span>
-            Leggi etichetta con AI
+            {isOffline ? 'Leggi etichetta sul dispositivo' : 'Leggi etichetta con AI'}
           </DialogTitle>
           <DialogDescription>
-            Inquadra l'intera etichetta del prodotto: il sistema prova a riconoscere nome, lotto,
-            scadenza e fornitore. Potrai sempre correggerli prima di salvare.
+            {isOffline
+              ? 'Il riconoscimento avviene interamente nel browser: la foto non lascia il dispositivo e non serve alcuna connessione.'
+              : "Inquadra l'intera etichetta del prodotto: il sistema prova a riconoscere nome, lotto, scadenza e fornitore. Potrai sempre correggerli prima di salvare."}
           </DialogDescription>
         </DialogHeader>
 
@@ -200,6 +266,27 @@ export default function LabelScanDialog({ open, onOpenChange, onApply }: LabelSc
         {/* ------------------------------------------------ FASE: attesa */}
         {phase === 'idle' && (
           <div className="space-y-4">
+            <div className="grid grid-cols-2 gap-1 rounded-lg border bg-muted/40 p-1">
+              <button
+                type="button"
+                onClick={() => setMode('ai')}
+                className={`flex items-center justify-center gap-2 rounded-md px-3 py-2 text-sm font-medium transition-colors ${
+                  !isOffline ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'
+                }`}
+              >
+                <Sparkles className="h-4 w-4" /> AI (consigliata)
+              </button>
+              <button
+                type="button"
+                onClick={() => setMode('offline')}
+                className={`flex items-center justify-center gap-2 rounded-md px-3 py-2 text-sm font-medium transition-colors ${
+                  isOffline ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'
+                }`}
+              >
+                <Cpu className="h-4 w-4" /> Sul dispositivo
+              </button>
+            </div>
+
             <button
               type="button"
               onClick={() => fileInputRef.current?.click()}
@@ -216,10 +303,17 @@ export default function LabelScanDialog({ open, onOpenChange, onApply }: LabelSc
 
             <div className="flex items-start gap-2 rounded-lg border border-info/30 bg-info/5 p-3 text-sm">
               <Info className="mt-0.5 h-4 w-4 shrink-0 text-info" />
-              <span className="text-muted-foreground">
-                La foto viene analizzata e <strong className="text-foreground">mai salvata</strong>: viene
-                scartata appena la lettura è terminata.
-              </span>
+              {isOffline ? (
+                <span className="text-muted-foreground">
+                  Nulla viene inviato a server esterni: analisi <strong className="text-foreground">100% sul dispositivo</strong>.
+                  Alla prima lettura vengono scaricati i modelli (poi restano in cache).
+                </span>
+              ) : (
+                <span className="text-muted-foreground">
+                  La foto viene analizzata e <strong className="text-foreground">mai salvata</strong>: viene
+                  scartata appena la lettura è terminata.
+                </span>
+              )}
             </div>
           </div>
         )}
@@ -233,12 +327,29 @@ export default function LabelScanDialog({ open, onOpenChange, onApply }: LabelSc
                 <div className="absolute inset-0 grid place-items-center bg-background/70 backdrop-blur-[2px]">
                   <div className="flex flex-col items-center gap-2 text-primary">
                     <Loader2 className="h-7 w-7 animate-spin" />
-                    <span className="text-sm font-medium">Lettura dell'etichetta in corso…</span>
+                    <span className="text-sm font-medium">
+                      {isOffline ? 'Lettura dell\'etichetta sul dispositivo…' : 'Lettura dell\'etichetta in corso…'}
+                    </span>
                   </div>
                 </div>
               </div>
             )}
-            <p className="text-center text-sm text-muted-foreground">Ci vuole solo qualche secondo.</p>
+
+            {isOffline && progress && (
+              <div className="space-y-2">
+                <div className="h-2 w-full overflow-hidden rounded-full bg-muted">
+                  <div
+                    className="h-full rounded-full bg-primary transition-[width] duration-300"
+                    style={{ width: `${Math.max(3, progress.percent)}%` }}
+                  />
+                </div>
+                <p className="text-center text-sm text-muted-foreground">
+                  {progress.label} ({progress.percent}%)
+                </p>
+              </div>
+            )}
+
+            {!isOffline && <p className="text-center text-sm text-muted-foreground">Ci vuole solo qualche secondo.</p>}
           </div>
         )}
 
@@ -249,16 +360,35 @@ export default function LabelScanDialog({ open, onOpenChange, onApply }: LabelSc
               <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
               <span>{error}</span>
             </div>
+
+            {notConfigured && !offlineFailed && preview && (
+              <Button variant="secondary" onClick={() => void retryWithMode('offline')}>
+                <Cpu className="mr-2 h-4 w-4" /> Leggi sul dispositivo
+              </Button>
+            )}
+
             {notConfigured && (
               <p className="text-sm text-muted-foreground">
-                Nel frattempo puoi usare la <strong className="text-foreground">scansione del codice a barre</strong>:
+                In alternativa puoi usare la <strong className="text-foreground">scansione del codice a barre</strong>:
                 per i prodotti con codice GS1-128 o DataMatrix lotto e scadenza vengono letti automaticamente.
               </p>
             )}
+
+            {offlineFailed && (
+              <p className="text-sm text-muted-foreground">
+                Puoi riprovare con la <strong className="text-foreground">lettura AI</strong> oppure inserire i dati manualmente.
+              </p>
+            )}
+
             <div className="flex flex-wrap gap-2">
               <Button variant="outline" onClick={() => fileInputRef.current?.click()}>
-                <RefreshCw className="mr-2 h-4 w-4" /> Riprova
+                <RefreshCw className="mr-2 h-4 w-4" /> Rifai foto
               </Button>
+              {isOffline && (
+                <Button variant="secondary" onClick={() => setMode('ai')}>
+                  <Sparkles className="mr-2 h-4 w-4" /> Usa AI
+                </Button>
+              )}
               <Button variant="ghost" onClick={() => reset()}>
                 Annulla
               </Button>
@@ -272,6 +402,11 @@ export default function LabelScanDialog({ open, onOpenChange, onApply }: LabelSc
             <div className="flex items-center justify-between gap-3">
               <div className="flex items-center gap-2">
                 <span className="text-sm text-muted-foreground">Dati letti dall'etichetta</span>
+                {isOffline && (
+                  <Badge variant="outline" className="border-primary/30 bg-primary/10 text-primary">
+                    Sul dispositivo
+                  </Badge>
+                )}
               </div>
               {confidence && (
                 <Badge variant="outline" className={CONFIDENCE_STYLE[confidence]}>

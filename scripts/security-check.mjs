@@ -68,7 +68,13 @@ if (maps.length > 0) {
 
 // 2) Nessun segreto
 console.log('\nScansione segreti:');
-const textFiles = files.filter((f) => /\.(js|mjs|cjs|css|html|json|txt)$/.test(f));
+// Gli asset OCR locali (Tesseract) sono glue/WASM di terze parti scaricati in
+// fase di build: il binario embeddato in base64 può generare falsi positivi sui
+// pattern dei segreti. Non contengono codice nostro, quindi sono esclusi.
+const isOcrAsset = (f) => relative(DIST, f).replace(/\\/g, '/').startsWith('tesseract/');
+const textFiles = files
+  .filter((f) => /\.(js|mjs|cjs|css|html|json|txt)$/.test(f))
+  .filter((f) => !isOcrAsset(f));
 let found = false;
 for (const file of textFiles) {
   const content = readFileSync(file, 'utf8');

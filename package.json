@@ -6,7 +6,7 @@
   "packageManager": "pnpm@8.10.0",
   "scripts": {
     "dev": "vite",
-    "build": "vite build",
+    "build": "node scripts/copy-tesseract.mjs && vite build",
     "lint": "eslint --quiet ./src",
     "preview": "vite preview",
     "security-check": "node scripts/security-check.mjs"
@@ -71,6 +71,7 @@
     "sonner": "^1.5.0",
     "tailwind-merge": "^2.5.2",
     "tailwindcss-animate": "^1.0.7",
+    "tesseract.js": "^7.0.0",
     "uuid": "^10.0.0",
     "vaul": "^1.1.2",
     "zod": "^3.23.8",

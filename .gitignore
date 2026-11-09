@@ -31,3 +31,6 @@ dist-ssr
 # Supabase CLI: file temporanei con connection string (contiene la password del DB)
 supabase/.temp
 supabase/.branches
+
+# Asset dell'OCR locale (Tesseract): scaricati in fase di build, non versionati
+public/tesseract
