@@ -8,7 +8,7 @@ import { useEffect, useState } from 'react';
 import { useAuth } from '@/hooks/useAuth';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Loader2, AlertTriangle, Bug, Building2, CalendarClock, ClipboardCheck, FlaskConical, LayoutDashboard, Map, MapPin, Rat, Shapes, SprayCan, Sun } from 'lucide-react';
+import { Loader2, AlertTriangle, Bug, Building2, CalendarClock, ClipboardCheck, FileDown, FileText, FlaskConical, LayoutDashboard, Map, MapPin, Rat, Shapes, SprayCan, Sun } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { PestOverviewPanel } from './PestOverviewPanel';
 import { PestFloorplanPanel } from './PestFloorplanPanel';
@@ -22,6 +22,8 @@ import { PestAreasPanel } from './PestAreasPanel';
 import { PestStationTypesPanel } from './PestStationTypesPanel';
 import { PestAnomaliesPanel } from './PestAnomaliesPanel';
 import { PestSchedulesPanel } from './PestSchedulesPanel';
+import { PestDocumentsPanel } from './PestDocumentsPanel';
+import { PestReportsPanel } from './PestReportsPanel';
 
 type PestTabKey =
   | 'panoramica'
@@ -35,6 +37,8 @@ type PestTabKey =
   | 'derattizzazione'
   | 'prodotti'
   | 'ditte'
+  | 'documenti'
+  | 'report'
   | 'aree'
   | 'tipi';
 
@@ -57,6 +61,8 @@ const PEST_TABS: PestTab[] = [
   { key: 'derattizzazione', label: 'Derattizzazione', description: 'Interventi contro i roditori, collegati alle postazioni.', icon: Rat },
   { key: 'prodotti', label: 'Prodotti', description: 'Archivio dei prodotti, scadenze e documentazione ufficiale.', icon: FlaskConical },
   { key: 'ditte', label: 'Ditte esterne', description: 'Rubrica delle aziende specializzate e dei contratti.', icon: Building2 },
+  { key: 'documenti', label: 'Documenti', description: 'Archivio documentale: planimetrie, rapporti, schede tecniche e certificazioni.', icon: FileText },
+  { key: 'report', label: 'Report PDF', description: 'Esportazione dei registri e del fascicolo completo per i controlli.', icon: FileDown },
   { key: 'aree', label: 'Aree e zone', description: 'Zone del locale su cui organizzare postazioni e controlli.', icon: MapPin },
   { key: 'tipi', label: 'Tipi di postazione', description: 'Categorie di trappole, esche, lampade UV e dispositivi.', icon: Shapes },
 ];
@@ -150,6 +156,8 @@ export default function PestControl({ initialToken, onTokenConsumed }: Props) {
         {tab === 'derattizzazione' && <PestInterventionsPanel companyId={companyId} kind="derattizzazione" />}
         {tab === 'prodotti' && <PestProductsPanel companyId={companyId} />}
         {tab === 'ditte' && <PestExternalCompaniesPanel companyId={companyId} />}
+        {tab === 'documenti' && <PestDocumentsPanel companyId={companyId} />}
+        {tab === 'report' && <PestReportsPanel companyId={companyId} />}
         {tab === 'aree' && <PestAreasPanel companyId={companyId} />}
         {tab === 'tipi' && <PestStationTypesPanel companyId={companyId} />}
       </div>

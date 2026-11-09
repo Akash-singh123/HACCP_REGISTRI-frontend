@@ -501,6 +501,34 @@ export interface PestSchedule {
   completed_at: string | null;
 }
 
+/** §15 — Documento dell'archivio documentale del modulo. */
+export interface PestDocument {
+  id: string;
+  name: string;
+  category: string | null;
+  storage_path: string;
+  issued_date: string | null;
+  expiry_date: string | null;
+  entity_type: string | null;
+  entity_id: string | null;
+  notes: string | null;
+  uploaded_by: string | null;
+  uploaded_by_name: string | null;
+}
+
+/** §4 — Piano di monitoraggio degli infestanti. */
+export interface PestPlan {
+  id: string;
+  name: string;
+  plan_year: number | null;
+  scope: string | null;
+  risk_basis: string | null;
+  description: string | null;
+  status: string | null;
+  approved_by: string | null;
+  approved_at: string | null;
+}
+
 export const api = {
   allergenTable: {
     list: (companyId: string) =>

@@ -326,3 +326,48 @@ export function scheduleIsLate(s: { status: string; due_date: string }): boolean
   if (s.status === 'completata' || s.status === 'annullata') return false;
   return new Date(`${s.due_date}T23:59:59`).getTime() < Date.now();
 }
+
+// ── Documentazione e archivio (§15) ────────────────────────────────────────
+
+/** Categorie dell'archivio documentale previste dalla specifica §15. */
+export const PEST_DOC_CATEGORIES = [
+  { value: 'planimetrie', label: 'Planimetrie' },
+  { value: 'piano_monitoraggio', label: 'Piano di monitoraggio' },
+  { value: 'rapporti_intervento', label: 'Rapporti di intervento' },
+  { value: 'schede_tecniche', label: 'Schede tecniche' },
+  { value: 'schede_sicurezza', label: 'Schede di sicurezza (SDS)' },
+  { value: 'documenti_prodotti', label: 'Documenti dei prodotti' },
+  { value: 'certificazioni', label: 'Certificazioni' },
+  { value: 'contratti', label: 'Contratti con ditte esterne' },
+  { value: 'fotografie', label: 'Fotografie' },
+  { value: 'altri_pdf', label: 'Altri PDF' },
+] as const;
+export const docCategoryMeta = (v: string | null | undefined) => pick(PEST_DOC_CATEGORIES, v);
+
+/** Entità a cui un documento può essere collegato (§15 "Documento collegato"). */
+export const PEST_DOC_ENTITIES = [
+  { value: 'station', label: 'Postazione' },
+  { value: 'intervention', label: 'Intervento' },
+  { value: 'product', label: 'Prodotto' },
+  { value: 'external_company', label: 'Ditta esterna' },
+  { value: 'anomaly', label: 'Anomalia' },
+  { value: 'plan', label: 'Piano di monitoraggio' },
+  { value: 'area', label: 'Area / zona' },
+  { value: 'floorplan', label: 'Planimetria' },
+] as const;
+export const docEntityMeta = (v: string | null | undefined) =>
+  PEST_DOC_ENTITIES.find((e) => e.value === v) ?? null;
+
+/** Stato temporale di una data di scadenza/emissione di un documento (§15). */
+export function docExpiryMeta(date: string | null | undefined): {
+  label: string;
+  badge: string;
+  expired: boolean;
+} {
+  if (!date) return { label: 'Senza scadenza', badge: 'border-border bg-muted text-muted-foreground', expired: false };
+  const end = new Date(`${date}T23:59:59`);
+  const diffDays = Math.floor((end.getTime() - Date.now()) / 86400000);
+  if (diffDays < 0) return { label: `Scaduto il ${new Date(date).toLocaleDateString('it-IT')}`, badge: 'border-destructive/30 bg-destructive/10 text-destructive', expired: true };
+  if (diffDays <= 30) return { label: `In scadenza (${diffDays}g)`, badge: 'border-warning/30 bg-warning/10 text-warning', expired: false };
+  return { label: `Valido fino al ${new Date(date).toLocaleDateString('it-IT')}`, badge: 'border-success/30 bg-success/10 text-success', expired: false };
+}
