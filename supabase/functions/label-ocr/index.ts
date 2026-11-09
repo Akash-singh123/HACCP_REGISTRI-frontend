@@ -13,6 +13,10 @@ import { guard, audit, json, errorResponse, HttpError, corsHeaders, type GuardCo
 /** Limite prudenziale sul payload immagine (base64). ~6 MB di immagine reale. */
 const MAX_BASE64_LENGTH = 8_000_000;
 
+// Modello Gemini per la vision. Sovrascrivibile con il secret `GEMINI_MODEL`
+// per seguire i rapidi cambi di versione del provider senza toccare il codice.
+const GEMINI_MODEL = Deno.env.get('GEMINI_MODEL') ?? 'gemini-flash-lite-latest';
+
 const SYSTEM_PROMPT = `Sei un assistente per la sicurezza alimentare (HACCP) che legge etichette di prodotti alimentari.
 Analizza l'immagine e restituisci ESCLUSIVAMENTE un oggetto JSON valido con questa forma:
 {
@@ -148,7 +152,7 @@ async function analyzeWithOpenAI(apiKey: string, base64: string, mimeType: strin
 
 /** Chiama Google Gemini (vision) e restituisce l'oggetto JSON già normalizzato. */
 async function analyzeWithGemini(apiKey: string, base64: string, mimeType: string): Promise<OcrResult> {
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${encodeURIComponent(apiKey)}`;
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${encodeURIComponent(apiKey)}`;
   const response = await fetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
