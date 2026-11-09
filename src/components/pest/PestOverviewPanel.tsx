@@ -17,6 +17,7 @@ import {
   Loader2,
   RefreshCw,
   Target,
+  WifiOff,
   Wrench,
 } from 'lucide-react';
 import { toast } from 'sonner';
@@ -209,6 +210,16 @@ export function PestOverviewPanel({ companyId }: Props) {
           )}
         </CardContent>
       </Card>
+
+      {/* Nota onesta: la modalità offline non è ancora disponibile (§18). */}
+      <div className="flex items-start gap-2 rounded-xl border border-dashed border-border bg-muted/30 px-4 py-3 text-sm text-muted-foreground">
+        <WifiOff className="mt-0.5 h-4 w-4 shrink-0" />
+        <p>
+          Il modulo richiede una connessione a Internet. La{' '}
+          <span className="font-medium text-foreground">modalità offline</span> (consultazione e registrazione senza
+          rete, con sincronizzazione automatica al ripristino della connessione) non è ancora disponibile.
+        </p>
+      </div>
     </div>
   );
 }
