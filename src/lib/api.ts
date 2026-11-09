@@ -516,6 +516,18 @@ export interface PestDocument {
   uploaded_by_name: string | null;
 }
 
+/** §17 — Voce dello storico modifiche del modulo (dall'audit log). */
+export interface PestAuditEntry {
+  id: string;
+  action: string;
+  entity: string | null;
+  entityId: string | null;
+  userId: string | null;
+  userName: string | null;
+  meta: Record<string, unknown>;
+  createdAt: string;
+}
+
 /** §4 — Piano di monitoraggio degli infestanti. */
 export interface PestPlan {
   id: string;
@@ -765,6 +777,9 @@ export const api = {
       call<{ item: T }>('pest-control', { action: `${entity}.upsert`, ...payload }, companyId),
     remove: (companyId: string, entity: string, id: string) =>
       call<{ ok: boolean }>('pest-control', { action: `${entity}.delete`, id }, companyId),
+    /** §17 — Storico modifiche del modulo (audit log dell'azienda). */
+    audit: (companyId: string, limit = 100) =>
+      call<{ items: PestAuditEntry[] }>('pest-control', { action: 'audit.list', limit }, companyId),
   },
 };
 

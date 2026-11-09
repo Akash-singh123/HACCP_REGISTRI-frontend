@@ -435,6 +435,62 @@ Deno.serve(async (req: Request) => {
       });
     }
 
+    // §17 — Storico modifiche: registro delle operazioni del modulo
+    // (chi, cosa, quando) letto dall'audit log dell'azienda.
+    if (action === 'audit.list') {
+      if (ctx.role === 'viewer') {
+        throw new HttpError(403, 'Permessi insufficienti per consultare lo storico', 'forbidden_role');
+      }
+      const limit = Math.min(Math.max(Number(body.limit) || 100, 1), 200);
+      const { data, error } = await ctx.admin
+        .from('audit_log')
+        .select('id, action, entity, entity_id, user_id, meta, created_at')
+        .eq('company_id', ctx.companyId)
+        .like('action', 'pest.%')
+        .order('created_at', { ascending: false })
+        .limit(limit);
+      if (error) throw new HttpError(500, 'Errore lettura storico', 'db_error');
+
+      const rows = (data ?? []) as Array<{
+        id: number;
+        action: string;
+        entity: string | null;
+        entity_id: string | null;
+        user_id: string | null;
+        meta: Record<string, unknown> | null;
+        created_at: string;
+      }>;
+
+      // Risolve il nome dell'utente una volta per ogni utente distinto.
+      const userIds = [...new Set(rows.map((r) => r.user_id).filter((v): v is string => Boolean(v)))];
+      const nameById = new Map<string, string>();
+      await Promise.all(
+        userIds.map(async (id) => {
+          try {
+            const { data: u } = await ctx.admin.auth.admin.getUserById(id);
+            const md = (u?.user?.user_metadata ?? {}) as Record<string, unknown>;
+            const full = String(md.full_name ?? md.name ?? '').trim();
+            nameById.set(id, full || u?.user?.email || 'Utente');
+          } catch {
+            nameById.set(id, 'Utente');
+          }
+        }),
+      );
+
+      return json({
+        items: rows.map((r) => ({
+          id: String(r.id),
+          action: r.action,
+          entity: r.entity,
+          entityId: r.entity_id,
+          userId: r.user_id,
+          userName: r.user_id ? nameById.get(r.user_id) ?? 'Utente' : null,
+          meta: r.meta ?? {},
+          createdAt: r.created_at,
+        })),
+      });
+    }
+
     // Azioni generiche <entita>.<list|upsert|delete>.
     const dot = action.lastIndexOf('.');
     const key = dot > 0 ? action.slice(0, dot) : '';

@@ -21,6 +21,11 @@ interface Props {
 
 const EMPTY = { name: '', description: '', color: '#0ea5e9', position: 0 };
 
+/** Prossimo numero d'ordine libero (1, 2, 3…): più basso = compare prima. */
+function nextFreePosition(items: PestArea[]): number {
+  return items.reduce((max, a) => Math.max(max, a.position ?? 0), 0) + 1;
+}
+
 export function PestAreasPanel({ companyId }: Props) {
   const { confirm, confirmDialog } = useConfirm();
   const [areas, setAreas] = useState<PestArea[]>([]);
@@ -34,6 +39,8 @@ export function PestAreasPanel({ companyId }: Props) {
     try {
       const { items } = await api.pest.list<PestArea>(companyId, 'areas');
       setAreas(items);
+      // Suggerisce l'ordine successivo per la nuova area (in modifica è ignorato).
+      setForm((p) => ({ ...p, position: nextFreePosition(items) }));
     } catch (err) {
       toast.error(err instanceof ApiError ? err.message : 'Impossibile caricare le aree');
     } finally {
@@ -47,7 +54,7 @@ export function PestAreasPanel({ companyId }: Props) {
   }, [companyId]);
 
   const resetForm = () => {
-    setForm({ ...EMPTY });
+    setForm({ ...EMPTY, position: nextFreePosition(areas) });
     setEditId(null);
   };
 
@@ -162,14 +169,19 @@ export function PestAreasPanel({ companyId }: Props) {
               </div>
               <div className="space-y-1.5">
                 <Label htmlFor="area-position" className="field-label">
-                  Ordine
+                  Ordine di visualizzazione
                 </Label>
                 <Input
                   id="area-position"
                   type="number"
+                  min={0}
                   value={form.position}
                   onChange={(e) => setForm((p) => ({ ...p, position: Number(e.target.value) }))}
                 />
+                <p className="text-xs text-muted-foreground">
+                  Decide in quale ordine l’area compare negli elenchi e nei menu. Numero più basso compare prima
+                  (1, 2, 3…). Viene proposto automaticamente il valore successivo.
+                </p>
               </div>
             </div>
           </div>

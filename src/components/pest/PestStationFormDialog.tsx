@@ -29,7 +29,7 @@ import { useConfirm } from '@/components/ConfirmDialog';
 import { blobToBase64, saveBlob, base64ToBlob } from '@/lib/docs';
 import { categoryMeta, statusMeta, PEST_STATUSES, codePrefix, PEST_LAMP_TYPES, PEST_GLUE_PLATE_TYPES } from './pestMeta';
 import { toast } from 'sonner';
-import { ImageIcon, Loader2, MapPin, Save, Sun, Trash2, Upload } from 'lucide-react';
+import { ImageIcon, AlertCircle, Loader2, MapPin, Save, Sun, Trash2, Upload } from 'lucide-react';
 
 /**
  * Valori preimpostati alla creazione di una postazione (coordinate e planimetria
@@ -168,17 +168,19 @@ export function PestStationFormDialog({
       });
     } else {
       // Suggerisce un codice in base alla prima tipologia disponibile.
+      // L'area è obbligatoria: precompila la prima area/zone del locale.
       const firstType = types[0];
       const prefix = codePrefix(firstType?.category ?? 'altro');
       setForm({
         ...EMPTY,
+        area_id: areas[0]?.id ?? '',
         ...defaults,
         station_type_id: firstType?.id ?? '',
         control_frequency_days: firstType?.default_frequency_days != null ? String(firstType.default_frequency_days) : '',
         code: nextCode(prefix, existingCodes),
       });
     }
-  }, [open, station, defaults, types, existingCodes]);
+  }, [open, station, defaults, types, existingCodes, areas]);
 
   // Carica l'anteprima della foto (link firmato temporaneo).
   useEffect(() => {
@@ -240,6 +242,15 @@ export function PestStationFormDialog({
       toast.error('Inserisci il codice identificativo della postazione');
       return;
     }
+    // Dipendenza di configurazione: la postazione va sempre collegata a un'area.
+    if (areas.length === 0) {
+      toast.error('Crea prima almeno un’area/zone del locale (scheda “Aree e zone”)');
+      return;
+    }
+    if (!form.area_id) {
+      toast.error('Seleziona l’area del locale');
+      return;
+    }
     setSaving(true);
     try {
       const payload = {
@@ -299,6 +310,15 @@ export function PestStationFormDialog({
           </DialogHeader>
 
           <div className="space-y-5 py-2">
+            {areas.length === 0 && (
+              <div className="flex items-start gap-2 rounded-lg border border-warning/40 bg-warning/5 p-3 text-sm">
+                <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-warning" />
+                <p className="text-muted-foreground">
+                  Nessuna area definita. Prima di registrare le postazioni apri la scheda{' '}
+                  <span className="font-medium text-foreground">Aree e zone</span> e crea almeno una zona del locale.
+                </p>
+              </div>
+            )}
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
               <div className="space-y-1.5">
                 <Label htmlFor="st-code" className="field-label">
@@ -351,22 +371,24 @@ export function PestStationFormDialog({
               </div>
               <div className="space-y-1.5">
                 <Label htmlFor="st-area" className="field-label">
-                  Area del locale
+                  Area del locale <span className="text-destructive">*</span>
                 </Label>
-                <Select
-                  value={form.area_id}
-                  onValueChange={(v) => setForm((p) => ({ ...p, area_id: v === '__none' ? '' : v }))}
-                >
+                <Select value={form.area_id} onValueChange={(v) => setForm((p) => ({ ...p, area_id: v }))}>
                   <SelectTrigger id="st-area">
                     <SelectValue placeholder="Seleziona area" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="__none">Nessuna area</SelectItem>
-                    {areas.map((a) => (
-                      <SelectItem key={a.id} value={a.id}>
-                        {a.name}
+                    {areas.length === 0 ? (
+                      <SelectItem value="__none" disabled>
+                        Nessuna area disponibile
                       </SelectItem>
-                    ))}
+                    ) : (
+                      areas.map((a) => (
+                        <SelectItem key={a.id} value={a.id}>
+                          {a.name}
+                        </SelectItem>
+                      ))
+                    )}
                   </SelectContent>
                 </Select>
               </div>
