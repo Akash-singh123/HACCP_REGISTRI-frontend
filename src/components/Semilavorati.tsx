@@ -1022,7 +1022,7 @@ export default function Semilavorati() {
                                     Scegli lotto
                                   </Button>
                                 </PopoverTrigger>
-                                <PopoverContent className="w-[340px] p-0">
+                                <PopoverContent className="w-[340px] max-w-[calc(100vw-1.5rem)] p-0">
                                   <Command>
                                     <CommandInput placeholder={`Filtra lotti di ${f.nome}...`} />
                                     <CommandList>

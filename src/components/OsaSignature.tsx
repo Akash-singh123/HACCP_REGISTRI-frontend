@@ -222,7 +222,7 @@ export default function OsaSignature() {
                   accept=".png,.jpg,.jpeg,image/png,image/jpeg"
                   onChange={handleFileUpload}
                   disabled={isLoading}
-                  className="flex-1"
+                  className="min-w-0 flex-1"
                 />
                 {signatureExists && (
                   <div className="flex gap-2">

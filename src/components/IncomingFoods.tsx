@@ -281,12 +281,13 @@ export default function IncomingFoods() {
                     if (!openNameSuggest && val.length <= 1) setOpenNameSuggest(true);
                   }}
                   placeholder="es. Pomodoro"
+                  className="min-w-0"
                 />
                 <Popover open={openNameSuggest} onOpenChange={setOpenNameSuggest}>
                   <PopoverTrigger asChild>
-                    <Button type="button" variant="outline">Suggerimenti</Button>
+                    <Button type="button" variant="outline" className="shrink-0">Suggerimenti</Button>
                   </PopoverTrigger>
-                  <PopoverContent className="w-[320px] p-0">
+                  <PopoverContent className="w-[320px] max-w-[calc(100vw-1.5rem)] p-0">
                     <Command>
                       <CommandInput value={nameQuery} onValueChange={setNameQuery} placeholder="Cerca alimento..." />
                       <CommandList>
@@ -376,8 +377,8 @@ export default function IncomingFoods() {
         </CardHeader>
         <CardContent className="pt-5">
           {/* Vista tabella (desktop) */}
-          <div className="hidden md:block">
-            <Table>
+          <div className="hidden overflow-x-auto md:block">
+            <Table className="min-w-[640px]">
               <TableHeader>
                 <TableRow>
                   <TableHead>Nome alimento</TableHead>
@@ -452,8 +453,8 @@ export default function IncomingFoods() {
                         <p className="mt-0.5 font-mono text-xs text-muted-foreground">{it.lotto}</p>
                       </div>
                       <div className="flex shrink-0 gap-1">
-                        <Button variant="ghost" size="icon" onClick={() => onEdit(it)}><Pencil className="h-4 w-4" /></Button>
-                        <Button variant="ghost" size="icon" onClick={() => onDelete(it)} className="text-destructive hover:text-destructive"><Trash2 className="h-4 w-4" /></Button>
+                        <Button variant="ghost" size="icon" className="h-11 w-11" onClick={() => onEdit(it)}><Pencil className="h-4 w-4" /></Button>
+                        <Button variant="ghost" size="icon" onClick={() => onDelete(it)} className="h-11 w-11 text-destructive hover:text-destructive"><Trash2 className="h-4 w-4" /></Button>
                       </div>
                     </div>
                     <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">

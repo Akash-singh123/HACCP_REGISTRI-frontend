@@ -277,8 +277,8 @@ export default function Billing() {
           </CardHeader>
 
           <CardContent className="space-y-5 pt-5">
-            <div className="flex items-end gap-2">
-              <span className="text-3xl font-bold tracking-tight">{formatPrice(status?.price ?? null)}</span>
+            <div className="flex flex-wrap items-end gap-x-2 gap-y-1">
+              <span className="min-w-0 break-words text-3xl font-bold tracking-tight">{formatPrice(status?.price ?? null)}</span>
               <span className="pb-1 text-sm text-muted-foreground">IVA esclusa, disdetta quando vuoi</span>
             </div>
 

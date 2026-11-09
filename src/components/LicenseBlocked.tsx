@@ -110,7 +110,7 @@ export default function LicenseBlocked() {
   return (
     <div className="app-shell flex min-h-screen items-center justify-center px-4 py-10">
       <Card className="surface w-full max-w-lg animate-slide-up overflow-hidden">
-        <CardContent className="space-y-6 pb-8 pt-8">
+        <CardContent className="space-y-6 px-4 pb-8 pt-8 sm:px-6">
           <div className="flex flex-col items-center text-center">
             <span
               className={cn(
@@ -188,7 +188,7 @@ export default function LicenseBlocked() {
             </AlertDescription>
           </Alert>
 
-          <div className="flex flex-col gap-2 sm:flex-row">
+          <div className="flex flex-col gap-3 sm:flex-row sm:gap-2">
             {canPay && billing?.configured && (
               <Button className="w-full" onClick={handlePayment} disabled={paying}>
                 {paying ? (

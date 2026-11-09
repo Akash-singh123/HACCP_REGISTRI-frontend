@@ -54,11 +54,15 @@ export const SignaturePad: React.FC<SignaturePadProps> = ({
   // --- Funzioni di disegno comuni ---
   const getCoords = (e: MouseEvent | TouchEvent, canvas: HTMLCanvasElement) => {
     const rect = canvas.getBoundingClientRect();
+    // Il canvas è scalato via CSS (larghezza fluida): senza questa conversione
+    // il tratto non resterebbe allineato al dito/mouse.
+    const scaleX = rect.width > 0 ? canvas.width / rect.width : 1;
+    const scaleY = rect.height > 0 ? canvas.height / rect.height : 1;
     if ('touches' in e) {
       const touch = e.touches[0];
-      return { x: touch.clientX - rect.left, y: touch.clientY - rect.top };
+      return { x: (touch.clientX - rect.left) * scaleX, y: (touch.clientY - rect.top) * scaleY };
     } else {
-      return { x: e.clientX - rect.left, y: e.clientY - rect.top };
+      return { x: (e.clientX - rect.left) * scaleX, y: (e.clientY - rect.top) * scaleY };
     }
   };
 
@@ -97,10 +101,11 @@ export const SignaturePad: React.FC<SignaturePadProps> = ({
     const canvas = canvasRef.current;
     if (!canvas) return;
 
-    // Aggiungi listener manuali per il touch
-    canvas.addEventListener('touchstart', startDrawing);
-    canvas.addEventListener('touchmove', draw);
-    canvas.addEventListener('touchend', stopDrawing);
+    // Aggiungi listener manuali per il touch (passive:false per poter chiamare
+    // preventDefault ed evitare lo scroll della pagina durante la firma)
+    canvas.addEventListener('touchstart', startDrawing, { passive: false });
+    canvas.addEventListener('touchmove', draw, { passive: false });
+    canvas.addEventListener('touchend', stopDrawing, { passive: false });
 
     // Pulizia listener quando il componente viene smontato
     return () => {
@@ -133,10 +138,11 @@ export const SignaturePad: React.FC<SignaturePadProps> = ({
       <div className="space-y-4">
         <div className="text-sm font-medium">{label}</div>
 
-        <div className="border-2 border-dashed border-gray-300 rounded-lg p-2">
+        <div className="w-full rounded-lg border-2 border-dashed border-gray-300 p-2">
           <canvas
             ref={canvasRef}
-            className="border border-gray-200 rounded cursor-crosshair touch-none"
+            className="block max-w-full rounded border border-gray-200 cursor-crosshair touch-none"
+            style={{ width: '100%', height: 'auto' }}
             onMouseDown={(e) => startDrawing(e.nativeEvent)}
             onMouseMove={(e) => draw(e.nativeEvent)}
             onMouseUp={(e) => stopDrawing(e.nativeEvent)}
@@ -149,6 +155,7 @@ export const SignaturePad: React.FC<SignaturePadProps> = ({
             type="button"
             variant="outline"
             size="sm"
+            className="h-11 sm:h-9"
             onClick={clearSignature}
             disabled={!hasSignature}
           >
@@ -159,6 +166,7 @@ export const SignaturePad: React.FC<SignaturePadProps> = ({
           <Button
             type="button"
             size="sm"
+            className="h-11 sm:h-9"
             onClick={saveSignature}
             disabled={!hasSignature}
           >

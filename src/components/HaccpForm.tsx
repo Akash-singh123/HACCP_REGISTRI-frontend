@@ -358,7 +358,7 @@ export const HaccpForm: React.FC<HaccpFormProps> = ({ company, onRecordSaved }) 
                               <Badge
                                 variant="outline"
                                 className={cn(
-                                  'shrink-0 gap-1 text-[11px] font-medium',
+                                  'shrink-0 gap-1 text-xs font-medium',
                                   inRange
                                     ? 'border-success/40 bg-success/10 text-success'
                                     : 'border-destructive/40 bg-destructive/10 text-destructive'

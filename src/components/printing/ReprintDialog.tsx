@@ -117,7 +117,7 @@ export function ReprintDialog({ open, onOpenChange, job }: Props) {
               </Alert>
             ) : (
               <div className="grid gap-3 sm:grid-cols-2">
-                <div className="space-y-1.5">
+                <div className="min-w-0 space-y-1.5">
                   <Label className="field-label">Stampante</Label>
                   <Select value={printer?.id ?? ''} onValueChange={setPrinterId}>
                     <SelectTrigger>
@@ -132,7 +132,7 @@ export function ReprintDialog({ open, onOpenChange, job }: Props) {
                     </SelectContent>
                   </Select>
                 </div>
-                <div className="space-y-1.5">
+                <div className="min-w-0 space-y-1.5">
                   <Label className="field-label">Copie</Label>
                   <Input
                     type="number"

@@ -167,7 +167,7 @@ export const AutoGenerator: React.FC<AutoGeneratorProps> = ({ company, onGenerat
               <Alert variant="destructive">
                 <AlertTriangle className="h-4 w-4" />
                 <AlertTitle>Intervallo non valido</AlertTitle>
-                <AlertDescription>
+                <AlertDescription className="break-words">
                   La data di inizio deve essere precedente alla data di fine.
                 </AlertDescription>
               </Alert>
@@ -175,7 +175,7 @@ export const AutoGenerator: React.FC<AutoGeneratorProps> = ({ company, onGenerat
               <Alert className="border-warning/40 bg-warning/10">
                 <AlertTriangle className="h-4 w-4 text-warning" />
                 <AlertTitle className="text-warning">Periodo troppo lungo</AlertTitle>
-                <AlertDescription>
+                <AlertDescription className="break-words">
                   Sono {days} giornate: il limite massimo è di 365 registri per generazione. Riduci l'intervallo.
                 </AlertDescription>
               </Alert>

@@ -792,13 +792,14 @@ export default function Allergeni() {
             </p>
 
             <div className="flex justify-center">
-              <div className="qr-code-print rounded-lg border-2 border-border bg-white p-4">
+              <div className="qr-code-print w-[220px] max-w-full rounded-lg border-2 border-border bg-white p-3 sm:p-4">
                 {shareUrl && (
                   <QRCodeSVG
                     value={shareUrl}
                     size={220}
                     level="M"
                     includeMargin={false}
+                    className="h-auto w-full"
                   />
                 )}
               </div>
@@ -810,7 +811,7 @@ export default function Allergeni() {
                 <Input
                   readOnly
                   value={shareUrl}
-                  className="font-mono text-xs"
+                  className="min-w-0 font-mono text-xs"
                   onClick={(e) => (e.target as HTMLInputElement).select()}
                 />
                 <Button variant="outline" size="icon" title="Copia link" aria-label="Copia link" onClick={copyShareUrl}>

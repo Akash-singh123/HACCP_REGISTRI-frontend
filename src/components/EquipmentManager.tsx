@@ -59,12 +59,12 @@ function EquipmentRow({ item, disabled, onRename, onDelete }: EquipmentRowProps)
         disabled={disabled}
         maxLength={80}
         placeholder="Nome attrezzatura"
-        className="h-9"
+        className="h-10"
       />
       <Button
         variant="ghost"
         size="icon"
-        className="shrink-0 text-destructive hover:bg-destructive/10 hover:text-destructive"
+        className="h-11 w-11 shrink-0 text-destructive hover:bg-destructive/10 hover:text-destructive sm:h-10 sm:w-10"
         onClick={() => onDelete(item)}
         disabled={disabled}
         title={`Elimina ${item.name}`}

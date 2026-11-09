@@ -178,7 +178,7 @@ export default function DocumentsArchive() {
                 accept=".pdf,.csv,.png,.jpg,.jpeg,.txt"
                 onChange={handleUpload}
                 disabled={isUploading}
-                className="flex-1"
+                className="min-w-0 flex-1"
               />
               {isUploading && <Loader2 className="h-5 w-5 shrink-0 animate-spin text-primary" />}
             </div>

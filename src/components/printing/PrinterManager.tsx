@@ -278,6 +278,7 @@ export default function PrinterManager() {
                           <Button
                             size="icon"
                             variant="ghost"
+                            className="h-11 w-11 sm:h-10 sm:w-10"
                             title="Imposta come predefinita"
                             aria-label="Imposta come predefinita"
                             onClick={async () => {
@@ -291,6 +292,7 @@ export default function PrinterManager() {
                         <Button
                           size="icon"
                           variant="ghost"
+                          className="h-11 w-11 sm:h-10 sm:w-10"
                           title="Modifica"
                           aria-label={`Modifica ${p.name}`}
                           onClick={() => {
@@ -305,7 +307,7 @@ export default function PrinterManager() {
                           variant="ghost"
                           title="Elimina"
                           aria-label={`Elimina ${p.name}`}
-                          className="text-destructive hover:bg-destructive/10 hover:text-destructive"
+                          className="h-11 w-11 text-destructive hover:bg-destructive/10 hover:text-destructive sm:h-10 sm:w-10"
                           onClick={() => handleDelete(p)}
                         >
                           <Trash2 />
@@ -336,7 +338,7 @@ export default function PrinterManager() {
 
           {/* Storico stampe */}
           <div className="space-y-3">
-            <div className="flex items-center justify-between">
+            <div className="flex flex-wrap items-center justify-between gap-2">
               <h3 className="section-title">Storico stampe recenti</h3>
               <Button size="sm" variant="ghost" onClick={() => void loadJobs()} disabled={jobsLoading}>
                 {jobsLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
@@ -347,7 +349,7 @@ export default function PrinterManager() {
             {jobs.length === 0 ? (
               <p className="text-sm text-muted-foreground">Nessuna stampa registrata.</p>
             ) : (
-              <div className="overflow-hidden rounded-xl border border-border/70">
+              <div className="overflow-x-auto rounded-xl border border-border/70">
                 <table className="w-full text-sm">
                   <thead className="bg-muted/50 text-left text-xs uppercase tracking-wide text-muted-foreground">
                     <tr>

@@ -5,7 +5,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
+import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { HaccpForm } from '@/components/HaccpForm';
 import { AutoGenerator } from '@/components/AutoGenerator';
 import { RecordsList } from '@/components/RecordsList';
@@ -559,15 +559,24 @@ export default function HaccpDashboard() {
                 key={key}
                 type="button"
                 onClick={() => goTo(key)}
+                aria-label={item.label}
+                aria-current={active ? 'page' : undefined}
                 className={[
-                  'flex flex-col items-center gap-1 py-2.5 text-[11px] font-medium transition-colors',
+                  'relative flex min-h-[58px] flex-col items-center justify-center gap-1 px-1 py-2 text-[11px] font-medium leading-none transition-colors active:scale-95',
                   active ? 'text-primary' : 'text-muted-foreground',
                 ].join(' ')}
               >
-                <span className={['grid h-9 w-12 place-items-center rounded-lg transition-colors', active ? 'bg-primary/10' : ''].join(' ')}>
+                <span
+                  className={[
+                    'absolute inset-x-5 top-0 h-0.5 rounded-full transition-opacity',
+                    active ? 'bg-primary opacity-100' : 'opacity-0',
+                  ].join(' ')}
+                  aria-hidden
+                />
+                <span className={['grid h-8 w-12 place-items-center rounded-full transition-colors', active ? 'bg-primary/10' : ''].join(' ')}>
                   <item.icon className="h-5 w-5" />
                 </span>
-                <span className="truncate">{item.short}</span>
+                <span className="max-w-full truncate">{item.short}</span>
               </button>
             );
           })}
@@ -575,21 +584,30 @@ export default function HaccpDashboard() {
             <button
               type="button"
               onClick={() => setMoreOpen(true)}
+              aria-label="Altre sezioni"
               className={[
-                'flex flex-col items-center gap-1 py-2.5 text-[11px] font-medium transition-colors',
+                'relative flex min-h-[58px] flex-col items-center justify-center gap-1 px-1 py-2 text-[11px] font-medium leading-none transition-colors active:scale-95',
                 !MOBILE_PRIMARY.includes(activeTab) ? 'text-primary' : 'text-muted-foreground',
               ].join(' ')}
             >
-              <span className={['grid h-9 w-12 place-items-center rounded-lg transition-colors', !MOBILE_PRIMARY.includes(activeTab) ? 'bg-primary/10' : ''].join(' ')}>
+              <span
+                className={[
+                  'absolute inset-x-5 top-0 h-0.5 rounded-full transition-opacity',
+                  !MOBILE_PRIMARY.includes(activeTab) ? 'bg-primary opacity-100' : 'opacity-0',
+                ].join(' ')}
+                aria-hidden
+              />
+              <span className={['grid h-8 w-12 place-items-center rounded-full transition-colors', !MOBILE_PRIMARY.includes(activeTab) ? 'bg-primary/10' : ''].join(' ')}>
                 <MoreHorizontal className="h-5 w-5" />
               </span>
               <span>Altro</span>
             </button>
-            <SheetContent side="bottom" className="rounded-t-2xl pb-8">
+            <SheetContent side="bottom" className="max-h-[85dvh] overflow-y-auto rounded-t-2xl pb-8">
               <SheetHeader className="text-left">
                 <SheetTitle>Altre sezioni</SheetTitle>
+                <SheetDescription className="text-xs">Tocca una voce per aprirla.</SheetDescription>
               </SheetHeader>
-              <div className="mt-4 grid gap-2">
+              <div className="mt-4 grid gap-2 sm:grid-cols-2">
                 {navItems
                   .filter((n) => !MOBILE_PRIMARY.includes(n.key))
                   .map((item) => {
@@ -600,16 +618,16 @@ export default function HaccpDashboard() {
                         type="button"
                         onClick={() => goTo(item.key)}
                         className={[
-                          'flex items-center gap-3 rounded-xl border px-4 py-3 text-left transition-colors',
+                          'flex items-center gap-3 rounded-xl border px-4 py-3.5 text-left transition-colors active:scale-[0.98]',
                           active ? 'border-primary/40 bg-primary/10' : 'border-border/70 hover:bg-accent',
                         ].join(' ')}
                       >
-                        <span className={['grid h-9 w-9 shrink-0 place-items-center rounded-lg', active ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground'].join(' ')}>
-                          <item.icon className="h-4 w-4" />
+                        <span className={['grid h-10 w-10 shrink-0 place-items-center rounded-lg', active ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground'].join(' ')}>
+                          <item.icon className="h-5 w-5" />
                         </span>
                         <span className="min-w-0">
-                          <span className="block truncate text-sm font-semibold">{item.label}</span>
-                          <span className="block truncate text-xs text-muted-foreground">{item.description}</span>
+                          <span className="block truncate text-[15px] font-semibold">{item.label}</span>
+                          <span className="mt-0.5 block text-xs leading-snug text-muted-foreground line-clamp-2">{item.description}</span>
                         </span>
                       </button>
                     );
