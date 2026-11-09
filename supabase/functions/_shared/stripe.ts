@@ -8,7 +8,7 @@ import { HttpError } from './guard.ts';
 const STRIPE_API = 'https://api.stripe.com/v1';
 
 /** Funzionalità sbloccate da un abbonamento pagato. */
-export const PAID_FEATURES = ['allergeni', 'haccp'];
+export const PAID_FEATURES = ['allergeni', 'haccp', 'pest_control'];
 
 /**
  * Elenco delle funzionalità comprese nell'abbonamento, in linguaggio comprensibile.
@@ -21,6 +21,7 @@ export const PLAN_FEATURES = [
   'Alimenti in ingresso con lotto e data di scadenza',
   'Prodotti semilavorati e lotti di produzione',
   'Tabella allergeni pronta da stampare e pubblicare',
+  'Controllo infestanti: planimetria, postazioni, controlli e interventi',
   'Firma OSA e archivio documenti nel cloud',
 ];
 

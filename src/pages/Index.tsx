@@ -16,6 +16,7 @@ import { api } from '@/lib/api';
 import { useAuth } from '@/hooks/useAuth';
 import {
   Archive,
+  Bug,
   Building2,
   ChefHat,
   ClipboardList,
@@ -41,10 +42,11 @@ import OsaSignature from '@/components/OsaSignature';
 import Allergeni from '@/components/Allergeni';
 import Billing from '@/components/Billing';
 import PrinterManager from '@/components/printing/PrinterManager';
+import PestControl from '@/components/pest/PestControl';
 import { startAutoRegisterScheduler } from '@/lib/autoRegisters';
 import { toast } from 'sonner';
 
-type TabKey = 'daily' | 'auto' | 'archive' | 'ingresso' | 'cloud' | 'semilavorati' | 'firma-osa' | 'allergeni' | 'stampanti' | 'abbonamento';
+type TabKey = 'daily' | 'auto' | 'archive' | 'ingresso' | 'cloud' | 'semilavorati' | 'firma-osa' | 'allergeni' | 'infestanti' | 'stampanti' | 'abbonamento';
 
 interface NavItem {
   key: TabKey;
@@ -60,6 +62,7 @@ const NAV_ITEMS: NavItem[] = [
   { key: 'ingresso', label: 'Alimenti in Ingresso', short: 'Ingresso', description: 'Registra gli alimenti con lotto, fornitore e scadenza.', icon: PackagePlus },
   { key: 'semilavorati', label: 'Prodotti Semilavorati', short: 'Semilavorati', description: 'Gestisci prodotti, categorie e registra i lotti di produzione.', icon: ChefHat },
   { key: 'allergeni', label: 'Tabella Allergeni', short: 'Allergeni', description: 'Tabella allergeni per prodotto, pronta da stampare.', icon: ShieldAlert },
+  { key: 'infestanti', label: 'Controllo Infestanti', short: 'Infestanti', description: 'Piano di monitoraggio, postazioni e interventi di disinfestazione.', icon: Bug },
   { key: 'cloud', label: 'Archivio Documenti', short: 'Documenti', description: 'Tutti i documenti PDF archiviati nel cloud.', icon: FolderOpen },
   { key: 'firma-osa', label: 'Firma OSA', short: 'Firma OSA', description: "Apponi la firma dell'operatore OSA.", icon: Signature },
   { key: 'stampanti', label: 'Stampanti ed Etichette', short: 'Stampanti', description: 'Collega le stampanti e configura i formati delle etichette.', icon: Printer },
@@ -82,6 +85,7 @@ export default function HaccpDashboard() {
   const [showSettings, setShowSettings] = useState(false);
   const [autoUnlocked, setAutoUnlocked] = useState(false);
   const [activeTab, setActiveTab] = useState<TabKey>('daily');
+  const [pestToken, setPestToken] = useState<string | null>(null);
   const [moreOpen, setMoreOpen] = useState(false);
   const [stats, setStats] = useState<{ total: number; thisMonth: number; thisYear: number; lastRecord: string | null }>({
     total: 0,
@@ -164,6 +168,19 @@ export default function HaccpDashboard() {
       }
     };
   }, [companyInfo]);
+
+  // Deep-link QR di una postazione (?pest=<token>): apre il modulo infestanti
+  // direttamente sulla scheda della postazione scansionata.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const token = params.get('pest');
+    if (!token) return;
+    setPestToken(token);
+    setActiveTab('infestanti');
+    params.delete('pest');
+    const query = params.toString();
+    window.history.replaceState({}, '', `${window.location.pathname}${query ? `?${query}` : ''}`);
+  }, []);
 
   // Ritorno da Stripe Checkout / portale: aggiorna lo stato della licenza.
   // Il webhook può arrivare con qualche secondo di ritardo, quindi ritentiamo.
@@ -320,6 +337,8 @@ export default function HaccpDashboard() {
         return <OsaSignature />;
       case 'allergeni':
         return <Allergeni />;
+      case 'infestanti':
+        return <PestControl initialToken={pestToken} onTokenConsumed={() => setPestToken(null)} />;
       case 'stampanti':
         return <PrinterManager />;
       case 'abbonamento':

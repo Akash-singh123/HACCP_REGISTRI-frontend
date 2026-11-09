@@ -8,13 +8,16 @@ interface SignaturePadProps {
   initialSignature?: string;
   width?: number;
   height?: number;
+  /** Titolo mostrato sopra il riquadro di firma. */
+  label?: string;
 }
 
 export const SignaturePad: React.FC<SignaturePadProps> = ({
   onSignatureChange,
   initialSignature,
   width = 400,
-  height = 200
+  height = 200,
+  label = 'Firma OSA',
 }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [isDrawing, setIsDrawing] = useState(false);
@@ -128,7 +131,7 @@ export const SignaturePad: React.FC<SignaturePadProps> = ({
   return (
     <Card className="p-4">
       <div className="space-y-4">
-        <div className="text-sm font-medium">Firma OSA</div>
+        <div className="text-sm font-medium">{label}</div>
 
         <div className="border-2 border-dashed border-gray-300 rounded-lg p-2">
           <canvas

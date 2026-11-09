@@ -20,5 +20,8 @@ verify_jwt = true
 [functions.admin-clients]
 verify_jwt = true
 
+[functions.pest-control]
+verify_jwt = true
+
 [storage]
 enabled = true

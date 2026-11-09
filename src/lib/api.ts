@@ -300,6 +300,207 @@ export interface PrintJobRecordPayload {
   printerId?: string;
 }
 
+// ── Modulo Controllo Infestanti ────────────────────────────────────────────
+export interface PestOverview {
+  stations: { total: number; active: number; due: number; maintenance: number };
+  anomalies: { open: number };
+  schedules: { planned: number; overdue: number };
+  documents: { expiringSoon: number };
+  inspections: { total: number; last30: number };
+  recentInspections: {
+    id: string;
+    inspectedAt: string;
+    outcome: string | null;
+    stationCode: string;
+    stationName: string;
+  }[];
+}
+
+export type PestStationStatus = 'attiva' | 'da_controllare' | 'manutenzione' | 'sospesa' | 'rimossa';
+export type PestStationCategory = 'roditori' | 'insetti_striscianti' | 'insetti_volanti' | 'altro';
+
+export interface PestArea { id: string; name: string; description: string | null; color: string | null; position: number; }
+export interface PestFloorplan {
+  id: string;
+  name: string;
+  area_id: string | null;
+  storage_path: string | null;
+  width: number | null;
+  height: number | null;
+}
+
+export interface PestStationType {
+  id: string;
+  name: string;
+  category: PestStationCategory;
+  icon: string | null;
+  color: string | null;
+  default_frequency_days: number | null;
+  position: number;
+}
+
+export interface PestStation {
+  id: string;
+  code: string;
+  name: string | null;
+  station_type_id: string | null;
+  area_id: string | null;
+  floorplan_id: string | null;
+  location: string | null;
+  pos_x: number | null;
+  pos_y: number | null;
+  install_date: string | null;
+  brand: string | null;
+  model: string | null;
+  device_kind: string | null;
+  status: PestStationStatus;
+  control_frequency_days: number | null;
+  responsible: string | null;
+  qr_token: string;
+  photo_path: string | null;
+  notes: string | null;
+  // §10 — campi specifici delle lampade UV / monitoraggio insetti volanti.
+  lamp_type: string | null;
+  glue_plate_type: string | null;
+  last_replacement_date: string | null;
+  next_verification_date: string | null;
+  replacement_frequency_days: number | null;
+}
+
+/** Campi liberi in scrittura: il backend valida e accetta solo le colonne ammesse. */
+export type PestUpsertPayload = Record<string, unknown> & { id?: string };
+
+export interface PestInspection {
+  id: string;
+  station_id: string;
+  inspected_at: string;
+  operator_name: string | null;
+  check_type: string | null;
+  outcome: string | null;
+  pest_present: boolean | null;
+  pest_type: string | null;
+  evidence_level: string | null;
+  trap_condition: string | null;
+  device_intact: boolean | null;
+  bait_present: boolean | null;
+  replacement_needed: boolean;
+  action_taken: string | null;
+  photo_paths: string[];
+  notes: string | null;
+  signature: string | null;
+  next_due: string | null;
+}
+
+export type PestInterventionKind = 'disinfestazione' | 'derattizzazione';
+
+export interface PestIntervention {
+  id: string;
+  code: string | null;
+  kind: PestInterventionKind;
+  performed_at: string;
+  area_id: string | null;
+  station_id: string | null;
+  pest_type: string | null;
+  problem: string | null;
+  executor_type: 'ditta_esterna' | 'personale_interno';
+  intervention_nature: 'programmato' | 'straordinario';
+  technician: string | null;
+  external_company_id: string | null;
+  product_id: string | null;
+  active_ingredient: string | null;
+  quantity: string | null;
+  application_method: string | null;
+  outcome: string | null;
+  instructions: string | null;
+  reentry_time: string | null;
+  next_check_date: string | null;
+  photo_paths: string[];
+  document_paths: string[];
+  notes: string | null;
+  signature: string | null;
+}
+
+export interface PestProduct {
+  id: string;
+  name: string;
+  producer: string | null;
+  category: string | null;
+  active_ingredient: string | null;
+  authorization_number: string | null;
+  lot: string | null;
+  purchase_date: string | null;
+  expiry_date: string | null;
+  usage_method: string | null;
+  precautions: string | null;
+  tech_doc_path: string | null;
+  sds_path: string | null;
+  label_path: string | null;
+}
+
+export interface PestExternalCompany {
+  id: string;
+  name: string;
+  vat: string | null;
+  address: string | null;
+  phone: string | null;
+  email: string | null;
+  contact_person: string | null;
+  service_types: string[];
+  contract_path: string | null;
+  notes: string | null;
+}
+
+/** §13 — Anomalia / non conformità rilevata su una postazione o area. */
+export interface PestAnomaly {
+  id: string;
+  code: string | null;
+  detected_at: string;
+  reported_by: string | null;
+  reported_by_name: string | null;
+  area_id: string | null;
+  station_id: string | null;
+  inspection_id: string | null;
+  intervention_id: string | null;
+  anomaly_type: string | null;
+  description: string | null;
+  photo_paths: string[];
+  priority: string;
+  risk_assessment: string | null;
+  status: string;
+  resolved_at: string | null;
+  resolution_notes: string | null;
+}
+
+/** §13 — Azione correttiva collegata a un'anomalia. */
+export interface PestCorrectiveAction {
+  id: string;
+  anomaly_id: string;
+  description: string;
+  responsible: string | null;
+  due_date: string | null;
+  status: string;
+  completed_at: string | null;
+  verification_notes: string | null;
+  verified_at: string | null;
+}
+
+/** §14 — Attività programmata nel calendario del modulo. */
+export interface PestSchedule {
+  id: string;
+  title: string;
+  kind: string;
+  due_date: string;
+  due_time: string | null;
+  frequency: string;
+  frequency_days: number | null;
+  responsible: string | null;
+  area_id: string | null;
+  station_id: string | null;
+  notes: string | null;
+  status: string;
+  completed_at: string | null;
+}
+
 export const api = {
   allergenTable: {
     list: (companyId: string) =>
@@ -514,6 +715,28 @@ export const api = {
       call<{ job: PrintJob }>('printing', { action: 'jobs.update', ...payload }, companyId),
     listJobs: (companyId: string, opts?: { lotto?: string; limit?: number }) =>
       call<{ jobs: PrintJob[] }>('printing', { action: 'jobs.list', ...opts }, companyId),
+  },
+
+  // Modulo Controllo Infestanti: piano, aree, planimetrie, postazioni, controlli,
+  // interventi, anomalie, azioni correttive, calendario e documentazione.
+  // Tutte le operazioni passano dall'Edge Function "pest-control" (RLS + feature).
+  pest: {
+    overview: (companyId: string) =>
+      call<PestOverview>('pest-control', { action: 'overview' }, companyId),
+    stationByQr: (companyId: string, token: string) =>
+      call<{ item: PestStation }>('pest-control', { action: 'stations.byQr', token }, companyId),
+    stationDetail: (companyId: string, id: string) =>
+      call<{ item: PestStation; lastInspection: PestInspection | null; openAnomalies: number }>(
+        'pest-control',
+        { action: 'stations.detail', id },
+        companyId,
+      ),
+    list: <T = unknown>(companyId: string, entity: string) =>
+      call<{ items: T[] }>('pest-control', { action: `${entity}.list` }, companyId),
+    upsert: <T = unknown>(companyId: string, entity: string, payload: PestUpsertPayload) =>
+      call<{ item: T }>('pest-control', { action: `${entity}.upsert`, ...payload }, companyId),
+    remove: (companyId: string, entity: string, id: string) =>
+      call<{ ok: boolean }>('pest-control', { action: `${entity}.delete`, id }, companyId),
   },
 };
 
