@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -6,9 +6,9 @@ import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { HaccpForm } from '@/components/HaccpForm';
-import { AutoGenerator } from '@/components/AutoGenerator';
-import { RecordsList } from '@/components/RecordsList';
-import DocumentsArchive from '@/components/DocumentsArchive';
+const AutoGenerator = lazy(() => import('@/components/AutoGenerator').then((m) => ({ default: m.AutoGenerator })));
+const RecordsList = lazy(() => import('@/components/RecordsList'));
+const DocumentsArchive = lazy(() => import('@/components/DocumentsArchive'));
 import { CompanyInfo } from '@/types/haccp';
 import { getRecords } from '@/lib/haccpUtils';
 import { api } from '@/lib/api';
@@ -34,13 +34,13 @@ import {
   Zap,
   type LucideIcon,
 } from 'lucide-react';
-import Semilavorati from '@/components/Semilavorati';
-import IncomingFoods from '@/components/IncomingFoods';
-import OsaSignature from '@/components/OsaSignature';
-import Allergeni from '@/components/Allergeni';
-import Billing from '@/components/Billing';
-import PrinterManager from '@/components/printing/PrinterManager';
-import PestControl from '@/components/pest/PestControl';
+const Semilavorati = lazy(() => import('@/components/Semilavorati'));
+const IncomingFoods = lazy(() => import('@/components/IncomingFoods'));
+const OsaSignature = lazy(() => import('@/components/OsaSignature'));
+const Allergeni = lazy(() => import('@/components/Allergeni'));
+const Billing = lazy(() => import('@/components/Billing'));
+const PrinterManager = lazy(() => import('@/components/printing/PrinterManager'));
+const PestControl = lazy(() => import('@/components/pest/PestControl'));
 import { PushBell, PushSettingsRow, PwaInstallBanner } from '@/components/Pwa';
 import { startAutoRegisterScheduler } from '@/lib/autoRegisters';
 import { cn } from '@/lib/utils';
@@ -558,7 +558,9 @@ export default function HaccpDashboard() {
 
         {/* Contenuto sezione */}
         <div key={activeTab} className="animate-fade-in">
-          {renderContent()}
+          <Suspense fallback={<div className="flex h-64 items-center justify-center"><Loader2 className="h-7 w-7 animate-spin text-muted-foreground" /></div>}>
+            {renderContent()}
+          </Suspense>
         </div>
       </main>
 

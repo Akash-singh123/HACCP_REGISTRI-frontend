@@ -1,17 +1,22 @@
+import { lazy, Suspense } from 'react';
 import { Toaster } from '@/components/ui/sonner';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
-import Index from './pages/Index';
-import NotFound from './pages/NotFound';
-import OsaSignature from './components/OsaSignature';
-import AllergeniPubblico from './pages/AllergeniPubblico';
-import Login from './pages/Login';
-import Landing from './pages/Landing';
-import AdminClienti from './pages/AdminClienti';
-import LicenseBlocked from './components/LicenseBlocked';
 import { AuthProvider, useAuth } from '@/hooks/useAuth';
 import { Loader2 } from 'lucide-react';
+
+// Code-splitting a livello di rotta: la shell iniziale resta minima e ogni
+// percorso scarica solo il codice che gli serve davvero (il gestionale
+// completo, la landing, il login, il pannello admin o il QR allergeni).
+const Index = lazy(() => import('./pages/Index'));
+const NotFound = lazy(() => import('./pages/NotFound'));
+const OsaSignature = lazy(() => import('./components/OsaSignature'));
+const AllergeniPubblico = lazy(() => import('./pages/AllergeniPubblico'));
+const Login = lazy(() => import('./pages/Login'));
+const Landing = lazy(() => import('./pages/Landing'));
+const AdminClienti = lazy(() => import('./pages/AdminClienti'));
+const LicenseBlocked = lazy(() => import('./components/LicenseBlocked'));
 
 const queryClient = new QueryClient();
 
@@ -77,14 +82,16 @@ const App = () => (
       <TooltipProvider>
         <Toaster />
         <BrowserRouter>
-          <Routes>
-            <Route path="/login" element={<Login />} />
-            <Route path="/allergeni" element={<AllergeniPubblico />} />
-            <Route path="/admin" element={<PlatformAdminOnly><AdminClienti /></PlatformAdminOnly>} />
-            <Route path="/" element={<HomeRoute />} />
-            <Route path="/firma-osa" element={<Protected><LicenseGate><OsaSignature /></LicenseGate></Protected>} />
-            <Route path="*" element={<NotFound />} />
-          </Routes>
+          <Suspense fallback={<FullScreenLoader />}>
+            <Routes>
+              <Route path="/login" element={<Login />} />
+              <Route path="/allergeni" element={<AllergeniPubblico />} />
+              <Route path="/admin" element={<PlatformAdminOnly><AdminClienti /></PlatformAdminOnly>} />
+              <Route path="/" element={<HomeRoute />} />
+              <Route path="/firma-osa" element={<Protected><LicenseGate><OsaSignature /></LicenseGate></Protected>} />
+              <Route path="*" element={<NotFound />} />
+            </Routes>
+          </Suspense>
         </BrowserRouter>
       </TooltipProvider>
     </AuthProvider>

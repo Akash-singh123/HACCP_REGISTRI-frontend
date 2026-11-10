@@ -77,6 +77,24 @@ export default defineConfig(({ mode }) => {
       rollupOptions: {
         output: {
           banner: `/*! ${COPYRIGHT} | build ${BUILD_ID} */`,
+          // Vendor splitting: i pacchetti di base, stabili nel tempo, finiscono
+          // in chunk dedicati. Così un rilascio della sola logica applicativa
+          // non invalida la cache del browser per React, Supabase e React Query.
+          // Le librerie pesanti e opzionali (jspdf, qrcode, tesseract, recharts,
+          // radix, icone) NON vengono forzate qui: restando raggiungibili solo
+          // via import dinamici, Rollup le colloca in chunk caricati on demand.
+          manualChunks(id) {
+            if (!id.includes("node_modules")) return undefined;
+            const p = id.replace(/\\/g, "/");
+            if (
+              /\/node_modules\/(react|react-dom|scheduler|react-router|react-router-dom)\//.test(p)
+            ) {
+              return "vendor-react";
+            }
+            if (p.includes("/@supabase/")) return "vendor-supabase";
+            if (p.includes("/@tanstack/")) return "vendor-query";
+            return undefined;
+          },
         },
       },
     },
