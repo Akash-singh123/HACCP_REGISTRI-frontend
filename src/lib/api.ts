@@ -541,6 +541,39 @@ export interface PestPlan {
   approved_at: string | null;
 }
 
+// ── Centro avvisi / motore di scadenze HACCP ───────────────────────────────
+
+/** Gravità di un avviso: critico (scaduto/fuori range) o da controllare. */
+export type AlertSeverity = 'critical' | 'warning';
+
+/** Categoria dell'avviso, mappata sull'area dell'app di riferimento. */
+export type AlertCategory =
+  | 'temperature'
+  | 'lotti'
+  | 'pest_piano'
+  | 'pest_certificazioni'
+  | 'pest_controlli';
+
+export interface AlertItem {
+  /** Chiave stabile dell'avviso (dedup e stato "letto"). */
+  key: string;
+  category: AlertCategory;
+  severity: AlertSeverity;
+  title: string;
+  message: string;
+  dueDate: string | null;
+  daysLeft: number | null;
+  entityId: string | null;
+  /** true se l'utente corrente ha già preso visione dell'avviso. */
+  read: boolean;
+}
+
+export interface AlertListResult {
+  alerts: AlertItem[];
+  counts: { total: number; unread: number; critical: number; warning: number };
+  generatedAt: string;
+}
+
 export const api = {
   allergenTable: {
     list: (companyId: string) =>
@@ -780,6 +813,20 @@ export const api = {
     /** §17 — Storico modifiche del modulo (audit log dell'azienda). */
     audit: (companyId: string, limit = 100) =>
       call<{ items: PestAuditEntry[] }>('pest-control', { action: 'audit.list', limit }, companyId),
+  },
+
+  // Centro avvisi: motore di scadenze calcolato lato server (temperature fuori
+  // range, lotti in scadenza, piano infestanti, certificazioni ditte esterne,
+  // controlli periodici). Lo stato "letto" è per utente.
+  alerts: {
+    list: (companyId: string) =>
+      call<AlertListResult>('alerts', { action: 'list' }, companyId),
+    markRead: (companyId: string, keys?: string[]) =>
+      call<{ ok: boolean; marked: number }>(
+        'alerts',
+        keys ? { action: 'mark-read', keys } : { action: 'mark-read' },
+        companyId,
+      ),
   },
 };
 

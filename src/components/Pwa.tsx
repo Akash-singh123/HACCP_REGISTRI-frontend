@@ -90,39 +90,6 @@ export function usePushNotifications(companyId: string | null) {
   return { supported, configured, subscribed, busy, enable, disable, sendTest };
 }
 
-/** Campanella nell'header: attiva/disattiva le notifiche con un tocco. */
-export function PushBell({ companyId }: { companyId: string | null }) {
-  const { supported, configured, subscribed, busy, enable, disable } = usePushNotifications(companyId);
-  if (!supported) return null;
-
-  const disabled = busy || !configured || !companyId;
-  const label = !configured
-    ? 'Notifiche non configurate sul server'
-    : subscribed
-      ? 'Disattiva notifiche'
-      : 'Attiva notifiche';
-
-  return (
-    <Button
-      variant="ghost"
-      size="icon"
-      disabled={disabled}
-      onClick={() => void (subscribed ? disable() : enable())}
-      title={label}
-      aria-label={label}
-      aria-pressed={subscribed}
-    >
-      {busy ? (
-        <Loader2 className="animate-spin" />
-      ) : subscribed ? (
-        <Bell className="text-primary" />
-      ) : (
-        <BellOff />
-      )}
-    </Button>
-  );
-}
-
 /** Banner compatto: installa la PWA e/o attiva le notifiche. */
 export function PwaInstallBanner({ companyId }: { companyId: string | null }) {
   const [canInstall, setCanInstall] = useState(false);

@@ -41,7 +41,8 @@ const Allergeni = lazy(() => import('@/components/Allergeni'));
 const Billing = lazy(() => import('@/components/Billing'));
 const PrinterManager = lazy(() => import('@/components/printing/PrinterManager'));
 const PestControl = lazy(() => import('@/components/pest/PestControl'));
-import { PushBell, PushSettingsRow, PwaInstallBanner } from '@/components/Pwa';
+import { PushSettingsRow, PwaInstallBanner } from '@/components/Pwa';
+import { NotificationCenter } from '@/components/NotificationCenter';
 import { startAutoRegisterScheduler } from '@/lib/autoRegisters';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
@@ -387,7 +388,10 @@ export default function HaccpDashboard() {
                 <div className="text-[11px] text-muted-foreground">P.IVA {companyInfo.piva || '—'}</div>
               </div>
             </div>
-            <PushBell companyId={authCompany?.id ?? null} />
+            <NotificationCenter
+              companyId={authCompany?.id ?? null}
+              onNavigate={(tab) => goTo(tab as TabKey)}
+            />
             <Button
               variant={showSettings ? 'secondary' : 'ghost'}
               size="icon"

@@ -26,5 +26,11 @@ verify_jwt = true
 [functions.push]
 verify_jwt = true
 
+# Il centro avvisi espone anche l'azione "dispatch", invocata dal job pg_cron
+# (server-to-server, senza JWT utente): la verifica avviene nella funzione
+# (guard per list/mark-read, segreto x-cron-secret per dispatch).
+[functions.alerts]
+verify_jwt = false
+
 [storage]
 enabled = true
