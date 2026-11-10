@@ -18,7 +18,19 @@ export default defineConfig(({ mode }) => {
   const isProd = mode === "production";
 
   return {
+    // Impronta di build: la stessa stringa viene scritta nel bundle (define) e
+    // nella shell HTML (plugin sotto). appGuard le confronta per rilevare
+    // eventuali manomissioni o accostamenti di file di build diverse.
+    define: {
+      __APP_BUILD_ID__: JSON.stringify(BUILD_ID),
+    },
     plugins: [
+      {
+        name: "inject-app-build-id",
+        transformIndexHtml(html) {
+          return html.replace(/__APP_BUILD_ID__/g, BUILD_ID);
+        },
+      },
       // Il localizzatore del codice serve solo in sviluppo: in produzione non
       // deve esporre percorsi e numeri di riga del sorgente nel DOM.
       !isProd && viteSourceLocator({ prefix: "mgx" }),

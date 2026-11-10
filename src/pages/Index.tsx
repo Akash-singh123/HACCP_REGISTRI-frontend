@@ -41,6 +41,7 @@ import Allergeni from '@/components/Allergeni';
 import Billing from '@/components/Billing';
 import PrinterManager from '@/components/printing/PrinterManager';
 import PestControl from '@/components/pest/PestControl';
+import { PushBell, PushSettingsRow, PwaInstallBanner } from '@/components/Pwa';
 import { startAutoRegisterScheduler } from '@/lib/autoRegisters';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
@@ -386,6 +387,7 @@ export default function HaccpDashboard() {
                 <div className="text-[11px] text-muted-foreground">P.IVA {companyInfo.piva || '—'}</div>
               </div>
             </div>
+            <PushBell companyId={authCompany?.id ?? null} />
             <Button
               variant={showSettings ? 'secondary' : 'ghost'}
               size="icon"
@@ -524,9 +526,14 @@ export default function HaccpDashboard() {
                   Gestisci stampanti
                 </Button>
               </div>
+
+              <PushSettingsRow companyId={authCompany?.id ?? null} />
             </CardContent>
           </Card>
         )}
+
+        {/* Installazione PWA / attivazione notifiche (compare solo se utile) */}
+        <PwaInstallBanner companyId={authCompany?.id ?? null} />
 
         {/* Statistiche: su mobile restano nella sezione iniziale per non rubare spazio alle altre */}
         <div className={cn('mb-8 grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4', activeTab !== 'daily' && 'hidden lg:grid')}>

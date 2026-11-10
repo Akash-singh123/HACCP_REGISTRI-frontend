@@ -113,6 +113,40 @@ if (copyrightFound) {
   fail('avviso di copyright assente: il bundle non riporta la dicitura proprietaria');
 }
 
+// 5) PWA e protezioni anti-copia (service worker, manifest, icone, impronta di build)
+console.log('\nPWA e protezioni anti-copia:');
+const rel = (f) => relative(DIST, f).replace(/\\/g, '/');
+const hasFile = (name) => files.some((f) => rel(f) === name);
+const beforePwa = violations;
+
+const sw = files.find((f) => rel(f) === 'sw.js');
+if (!sw) {
+  fail('service worker assente (dist/sw.js)');
+} else {
+  const swContent = readFileSync(sw, 'utf8');
+  if (!COPYRIGHT_MARKER.test(swContent)) fail('sw.js senza avviso di copyright');
+  if (!/addEventListener\(\s*['"]fetch['"]/.test(swContent)) fail('sw.js senza gestione cache (fetch)');
+  if (!/addEventListener\(\s*['"]push['"]/.test(swContent)) fail('sw.js senza gestione notifiche push');
+}
+
+if (!hasFile('manifest.webmanifest')) fail('manifest PWA assente');
+if (!hasFile('icons/icon.svg')) fail('icona PWA assente (icons/icon.svg)');
+if (!hasFile('icons/icon-maskable.svg')) fail('icona PWA maskable assente (icons/icon-maskable.svg)');
+
+const indexFile = files.find((f) => rel(f) === 'index.html');
+if (!indexFile) {
+  fail('index.html assente nel bundle');
+} else {
+  const html = readFileSync(indexFile, 'utf8');
+  if (!/rel="manifest"/.test(html)) fail('index.html senza collegamento al manifest PWA');
+  if (!/name="app-build"/.test(html)) fail('index.html senza impronta di build (protezione integrità)');
+  if (/__APP_BUILD_ID__/.test(html)) fail('impronta di build non iniettata in index.html');
+}
+
+if (violations === beforePwa) {
+  console.log('  ✓ service worker, manifest, icone e impronta di build presenti');
+}
+
 console.log('');
 if (violations > 0) {
   console.error(`❌ Security check FALLITO: ${violations} violazione/i.`);

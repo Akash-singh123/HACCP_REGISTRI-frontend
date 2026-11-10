@@ -23,5 +23,8 @@ verify_jwt = true
 [functions.pest-control]
 verify_jwt = true
 
+[functions.push]
+verify_jwt = true
+
 [storage]
 enabled = true

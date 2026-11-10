@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512" role="img" aria-label="Sistema HACCP">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0b7285" />
+      <stop offset="1" stop-color="#0ea5b7" />
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" fill="url(#bg)" />
+  <g transform="translate(256 256) scale(0.66) translate(-256 -256)">
+    <g fill="none" stroke="#ffffff" stroke-width="34" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M256 118l106 41v98c0 76-47 121-106 140-59-19-106-64-106-140v-98z" />
+      <path d="M212 258l30 31 60-66" />
+    </g>
+  </g>
+</svg>
