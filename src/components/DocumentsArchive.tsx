@@ -240,6 +240,7 @@ export default function DocumentsArchive() {
                                 size="icon"
                                 title="Scarica"
                                 aria-label={`Scarica ${file.name}`}
+                                className="h-11 w-11 sm:h-10 sm:w-10"
                                 onClick={() => handleDownload(file)}
                               >
                                 <Download className="h-4 w-4" />
@@ -249,7 +250,7 @@ export default function DocumentsArchive() {
                                 size="icon"
                                 title="Elimina"
                                 aria-label={`Elimina ${file.name}`}
-                                className="text-destructive hover:bg-destructive/10 hover:text-destructive"
+                                className="h-11 w-11 text-destructive hover:bg-destructive/10 hover:text-destructive sm:h-10 sm:w-10"
                                 onClick={() => handleDelete(file)}
                               >
                                 <Trash2 className="h-4 w-4" />

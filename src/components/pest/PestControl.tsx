@@ -4,7 +4,7 @@
 // monitoraggio. I dati arrivano sempre dall'Edge Function "pest-control":
 // nessun dato dimostrativo, nessuna simulazione.
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useAuth } from '@/hooks/useAuth';
 import { api, type PestArea, type PestStationType } from '@/lib/api';
 import { Card, CardContent } from '@/components/ui/card';
@@ -95,6 +95,18 @@ export default function PestControl({ initialToken, onTokenConsumed }: Props) {
   const activeTab = PEST_TABS.find((t) => t.key === tab) ?? PEST_TABS[0];
   // Lo storico modifiche non è consultabile dal profilo "sola lettura".
   const tabs = PEST_TABS.filter((t) => !(t.key === 'storico' && role === 'viewer'));
+  // Sotto-navigazione scorrevole: contenitore e voce attiva da portare in vista.
+  const navRef = useRef<HTMLDivElement>(null);
+  const activeTabRef = useRef<HTMLButtonElement>(null);
+
+  // Centra la scheda attiva nella barra scorrevole.
+  useEffect(() => {
+    const nav = navRef.current;
+    const btn = activeTabRef.current;
+    if (!nav || !btn) return;
+    const target = btn.offsetLeft - nav.clientWidth / 2 + btn.clientWidth / 2;
+    nav.scrollTo({ left: Math.max(0, target), behavior: 'smooth' });
+  }, [tab]);
 
   // Un deep-link QR porta direttamente alla scheda della postazione.
   useEffect(() => {
@@ -162,18 +174,23 @@ export default function PestControl({ initialToken, onTokenConsumed }: Props) {
         </CardContent>
       </Card>
 
-      {/* Sotto-navigazione */}
-      <nav className="flex flex-wrap items-center gap-1.5">
+      {/* Sotto-navigazione: barra scorrevole orizzontalmente, la scheda attiva è centrata */}
+      <nav
+        ref={navRef}
+        aria-label="Sezioni del modulo infestanti"
+        className="flex items-center gap-1.5 overflow-x-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+      >
         {tabs.map((t) => {
           const active = t.key === tab;
           return (
             <button
               key={t.key}
+              ref={active ? activeTabRef : undefined}
               type="button"
               onClick={() => setTab(t.key)}
               aria-current={active ? 'page' : undefined}
               className={cn(
-                'inline-flex items-center gap-2 rounded-full px-3.5 py-2 text-sm font-medium transition-all duration-200',
+                'inline-flex shrink-0 items-center gap-2 rounded-full px-3.5 py-2 text-sm font-medium transition-all duration-200',
                 active
                   ? 'bg-primary text-primary-foreground shadow-sm'
                   : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground',

@@ -245,7 +245,7 @@ export function PestSchedulesPanel({ companyId }: Props) {
               </div>
             </div>
             <div className="flex flex-wrap gap-2">
-              <Button variant="ghost" size="icon" onClick={() => void load()} title="Aggiorna">
+              <Button variant="ghost" size="icon" className="h-11 w-11 sm:h-10 sm:w-10" onClick={() => void load()} title="Aggiorna">
                 {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
               </Button>
               <Button onClick={openCreate}>
@@ -304,7 +304,7 @@ export function PestSchedulesPanel({ companyId }: Props) {
 
                 <div className="ml-auto flex flex-wrap items-center gap-2">
                   <Select value={filterStatus} onValueChange={setFilterStatus}>
-                    <SelectTrigger className="h-9 w-[170px]">
+                    <SelectTrigger className="h-9 w-full sm:w-[170px]">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
@@ -317,7 +317,7 @@ export function PestSchedulesPanel({ companyId }: Props) {
                     </SelectContent>
                   </Select>
                   <Select value={filterKind} onValueChange={setFilterKind}>
-                    <SelectTrigger className="h-9 w-[190px]">
+                    <SelectTrigger className="h-9 w-full sm:w-[190px]">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
@@ -344,7 +344,7 @@ export function PestSchedulesPanel({ companyId }: Props) {
                 </p>
               ) : (
                 <>
-                  <div className="hidden md:block">
+                  <div className="hidden md:block overflow-x-auto">
                     <Table>
                       <TableHeader>
                         <TableRow>
@@ -471,24 +471,24 @@ export function PestSchedulesPanel({ companyId }: Props) {
                             {areaName(s.area_id) && <span>{areaName(s.area_id)}</span>}
                             {stationCode(s.station_id) && <span>{stationCode(s.station_id)}</span>}
                           </div>
-                          <div className="mt-3 flex items-center gap-1.5 border-t border-border/60 pt-3">
+                          <div className="mt-3 flex flex-wrap items-center gap-1.5 border-t border-border/60 pt-3">
                             {canComplete && (
                               <Button
                                 size="sm"
                                 variant="ghost"
-                                className="text-success hover:bg-success/10 hover:text-success"
+                                className="h-11 text-success hover:bg-success/10 hover:text-success"
                                 onClick={() => onComplete(s)}
                               >
                                 <CheckCircle2 className="h-4 w-4" /> Completa
                               </Button>
                             )}
-                            <Button size="sm" variant="ghost" onClick={() => openEdit(s)}>
+                            <Button size="sm" variant="ghost" className="h-11" onClick={() => openEdit(s)}>
                               <Pencil className="h-4 w-4" /> Modifica
                             </Button>
                             <Button
                               size="sm"
                               variant="ghost"
-                              className="ml-auto text-destructive hover:bg-destructive/10 hover:text-destructive"
+                              className="ml-auto h-11 text-destructive hover:bg-destructive/10 hover:text-destructive"
                               onClick={() => onDelete(s)}
                             >
                               <Trash2 className="h-4 w-4" />

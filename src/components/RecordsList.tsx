@@ -361,7 +361,7 @@ function RecordsList({ company, refreshTrigger = 0 }: RecordsListProps) {
                         title="Elimina mese"
                         aria-label={`Elimina i registri di ${monthName}`}
                         onClick={() => handleDeleteMonth(year, month)}
-                        className="ml-auto text-destructive hover:bg-destructive/10 hover:text-destructive"
+                        className="ml-auto h-11 w-11 text-destructive hover:bg-destructive/10 hover:text-destructive sm:h-10 sm:w-10"
                       >
                         <Trash2 className="h-4 w-4" />
                       </Button>

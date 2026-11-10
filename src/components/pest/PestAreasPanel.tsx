@@ -146,7 +146,7 @@ export function PestAreasPanel({ companyId }: Props) {
                 placeholder="es. Cucina, Magazzino, Sala, Esterno…"
               />
             </div>
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <div className="space-y-1.5">
                 <Label htmlFor="area-color" className="field-label">
                   Colore
@@ -264,15 +264,15 @@ export function PestAreasPanel({ companyId }: Props) {
                   {area.description && (
                     <p className="mt-2 line-clamp-2 text-xs text-muted-foreground">{area.description}</p>
                   )}
-                  <div className="mt-3 flex items-center gap-1.5 border-t border-border/60 pt-3">
-                    <Button size="sm" variant="ghost" onClick={() => onEdit(area)}>
+                  <div className="mt-3 flex flex-wrap items-center gap-1.5 border-t border-border/60 pt-3">
+                    <Button size="sm" variant="ghost" className="h-11" onClick={() => onEdit(area)}>
                       <Pencil className="h-4 w-4" />
                       Modifica
                     </Button>
                     <Button
                       size="sm"
                       variant="ghost"
-                      className="ml-auto text-destructive hover:bg-destructive/10 hover:text-destructive"
+                      className="ml-auto h-11 text-destructive hover:bg-destructive/10 hover:text-destructive"
                       onClick={() => onDelete(area)}
                     >
                       <Trash2 className="h-4 w-4" />

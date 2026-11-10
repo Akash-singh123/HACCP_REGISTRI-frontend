@@ -625,6 +625,7 @@ export default function Allergeni() {
                               size="icon"
                               title="Modifica prodotto"
                               aria-label={`Modifica ${prod.nome}`}
+                              className="h-11 w-11 sm:h-10 sm:w-10"
                               onClick={() => onEdit(prod)}
                             >
                               <Pencil className="h-4 w-4" />
@@ -634,7 +635,7 @@ export default function Allergeni() {
                               size="icon"
                               title="Elimina prodotto"
                               aria-label={`Elimina ${prod.nome}`}
-                              className="text-destructive hover:bg-destructive/10 hover:text-destructive"
+                              className="h-11 w-11 text-destructive hover:bg-destructive/10 hover:text-destructive sm:h-10 sm:w-10"
                               onClick={() => onDelete(prod)}
                             >
                               <Trash2 className="h-4 w-4" />
@@ -814,7 +815,7 @@ export default function Allergeni() {
                   className="min-w-0 font-mono text-xs"
                   onClick={(e) => (e.target as HTMLInputElement).select()}
                 />
-                <Button variant="outline" size="icon" title="Copia link" aria-label="Copia link" onClick={copyShareUrl}>
+                <Button variant="outline" size="icon" title="Copia link" aria-label="Copia link" className="h-11 w-11 sm:h-10 sm:w-10" onClick={copyShareUrl}>
                   <Copy className="h-4 w-4" />
                 </Button>
               </div>

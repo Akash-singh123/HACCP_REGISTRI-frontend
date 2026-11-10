@@ -115,7 +115,7 @@ export function PestStationDetailDialog({
         ) : (
           <div className="space-y-4 py-2">
             {/* Riepilogo */}
-            <div className="grid grid-cols-2 gap-3 text-sm">
+            <div className="grid grid-cols-1 gap-3 text-sm sm:grid-cols-2">
               <div className="rounded-xl border border-border bg-card p-3">
                 <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
                   <Tag className="h-3.5 w-3.5" /> Tipologia
@@ -153,7 +153,7 @@ export function PestStationDetailDialog({
             </div>
 
             {/* Dettagli tecnici */}
-            <div className="grid grid-cols-2 gap-x-4 gap-y-2 rounded-xl border border-border bg-muted/30 p-3 text-sm">
+            <div className="grid grid-cols-1 gap-x-4 gap-y-2 rounded-xl border border-border bg-muted/30 p-3 text-sm sm:grid-cols-2">
               <DetailRow icon={Cog} label="Dispositivo" value={station.device_kind || '—'} />
               <DetailRow icon={Wrench} label="Marca / modello" value={[station.brand, station.model].filter(Boolean).join(' ') || '—'} />
               <DetailRow icon={CalendarClock} label="Installazione" value={formatDate(station.install_date)} />

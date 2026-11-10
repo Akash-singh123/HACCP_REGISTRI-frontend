@@ -132,7 +132,7 @@ export function PestInterventionsPanel({ companyId, kind }: Props) {
               </div>
             </div>
             <div className="flex flex-wrap gap-2">
-              <Button variant="ghost" size="icon" onClick={() => void load()} title="Aggiorna">
+              <Button variant="ghost" size="icon" className="h-11 w-11 sm:h-10 sm:w-10" onClick={() => void load()} title="Aggiorna">
                 {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
               </Button>
               <Button onClick={openCreate}>
@@ -165,7 +165,7 @@ export function PestInterventionsPanel({ companyId, kind }: Props) {
             </div>
           ) : (
             <>
-              <div className="hidden md:block">
+              <div className="hidden md:block overflow-x-auto">
                 <Table>
                   <TableHeader>
                     <TableRow>
@@ -238,14 +238,14 @@ export function PestInterventionsPanel({ companyId, kind }: Props) {
                       {i.pest_type && <span>{i.pest_type}</span>}
                       {productName(i.product_id) && <span>{productName(i.product_id)}</span>}
                     </div>
-                    <div className="mt-3 flex items-center gap-1.5 border-t border-border/60 pt-3">
-                      <Button size="sm" variant="ghost" onClick={() => openEdit(i)}>
+                    <div className="mt-3 flex flex-wrap items-center gap-1.5 border-t border-border/60 pt-3">
+                      <Button size="sm" variant="ghost" className="h-11" onClick={() => openEdit(i)}>
                         <Pencil className="h-4 w-4" /> Modifica
                       </Button>
                       <Button
                         size="sm"
                         variant="ghost"
-                        className="ml-auto text-destructive hover:bg-destructive/10 hover:text-destructive"
+                        className="ml-auto h-11 text-destructive hover:bg-destructive/10 hover:text-destructive"
                         onClick={() => onDelete(i)}
                       >
                         <Trash2 className="h-4 w-4" />

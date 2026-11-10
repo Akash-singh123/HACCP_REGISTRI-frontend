@@ -852,6 +852,7 @@ export default function Semilavorati() {
                             variant="ghost"
                             title="Modifica prodotto"
                             aria-label={`Modifica ${t.nome}`}
+                            className="h-11 w-11 sm:h-10 sm:w-10"
                             onClick={() => setShowEditDialog({ open: true, nome: t.nome })}
                           >
                             <Pencil />
@@ -861,7 +862,7 @@ export default function Semilavorati() {
                             variant="ghost"
                             title="Elimina prodotto"
                             aria-label={`Elimina ${t.nome}`}
-                            className="text-destructive hover:bg-destructive/10 hover:text-destructive"
+                            className="h-11 w-11 text-destructive hover:bg-destructive/10 hover:text-destructive sm:h-10 sm:w-10"
                             onClick={() => handleRemoveProduct(t.nome)}
                           >
                             <Trash2 />
@@ -931,7 +932,7 @@ export default function Semilavorati() {
                           size="icon"
                           title="Rimuovi dalla composizione"
                           aria-label={`Rimuovi ${ing.nome}`}
-                          className="text-destructive hover:bg-destructive/10 hover:text-destructive"
+                          className="h-11 w-11 text-destructive hover:bg-destructive/10 hover:text-destructive sm:h-10 sm:w-10"
                           onClick={() => handleRemoveIngredientFromTemplate(idx)}
                         >
                           <Trash2 />
@@ -1015,6 +1016,7 @@ export default function Semilavorati() {
                                 readOnly
                                 value={watchedIngredients?.[idx]?.lotto || ''}
                                 placeholder={`Seleziona lotto per ${f.nome}`}
+                                className="min-w-0"
                               />
                               <Popover>
                                 <PopoverTrigger asChild>
@@ -1058,7 +1060,7 @@ export default function Semilavorati() {
                           size="icon"
                           title="Rimuovi dalla registrazione"
                           aria-label={`Rimuovi ${f.nome} dalla registrazione`}
-                          className="text-destructive hover:bg-destructive/10 hover:text-destructive"
+                          className="h-11 w-11 text-destructive hover:bg-destructive/10 hover:text-destructive sm:h-10 sm:w-10"
                           onClick={() => remove(idx)}
                         >
                           <Trash2 />
@@ -1304,7 +1306,7 @@ export default function Semilavorati() {
                     type="button"
                     variant="ghost"
                     size="icon"
-                    className="text-destructive hover:bg-destructive/10 hover:text-destructive"
+                    className="h-11 w-11 text-destructive hover:bg-destructive/10 hover:text-destructive sm:h-10 sm:w-10"
                     title="Rimuovi ingrediente"
                     aria-label={`Rimuovi ingrediente ${idx + 1}`}
                     onClick={() => addFields.remove(idx)}

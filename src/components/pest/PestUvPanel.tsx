@@ -243,7 +243,7 @@ export function PestUvPanel({ companyId }: Props) {
               </div>
             </div>
             <div className="flex flex-wrap gap-2">
-              <Button variant="ghost" size="icon" onClick={() => void load()} title="Aggiorna">
+              <Button variant="ghost" size="icon" className="h-11 w-11 sm:h-10 sm:w-10" onClick={() => void load()} title="Aggiorna">
                 {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
               </Button>
               <Button variant="outline" onClick={openCreate}>
@@ -354,16 +354,16 @@ export function PestUvPanel({ companyId }: Props) {
                         </Badge>
 
                         <div className="mt-auto flex flex-wrap items-center gap-1.5 border-t border-border/60 pt-3">
-                          <Button size="sm" variant="ghost" onClick={() => registerInspection(s)}>
+                          <Button size="sm" variant="ghost" className="h-11 sm:h-10" onClick={() => registerInspection(s)}>
                             <ClipboardCheck className="h-4 w-4" /> Verifica
                           </Button>
-                          <Button size="sm" variant="ghost" onClick={() => setReplacementStation(s)}>
+                          <Button size="sm" variant="ghost" className="h-11 sm:h-10" onClick={() => setReplacementStation(s)}>
                             <RefreshCcw className="h-4 w-4" /> Sostituzione
                           </Button>
-                          <Button size="sm" variant="ghost" onClick={() => setHistoryStation(s)}>
+                          <Button size="sm" variant="ghost" className="h-11 sm:h-10" onClick={() => setHistoryStation(s)}>
                             <History className="h-4 w-4" /> Storico
                           </Button>
-                          <Button size="sm" variant="ghost" className="ml-auto" onClick={() => openEdit(s)}>
+                          <Button size="sm" variant="ghost" className="ml-auto h-11 sm:h-10" onClick={() => openEdit(s)}>
                             <Pencil className="h-4 w-4" />
                           </Button>
                         </div>

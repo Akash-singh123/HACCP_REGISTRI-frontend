@@ -281,7 +281,7 @@ export default function IncomingFoods() {
                     if (!openNameSuggest && val.length <= 1) setOpenNameSuggest(true);
                   }}
                   placeholder="es. Pomodoro"
-                  className="min-w-0"
+                  className="min-w-0 flex-1"
                 />
                 <Popover open={openNameSuggest} onOpenChange={setOpenNameSuggest}>
                   <PopoverTrigger asChild>

@@ -5,7 +5,6 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { HaccpForm } from '@/components/HaccpForm';
 import { AutoGenerator } from '@/components/AutoGenerator';
 import { RecordsList } from '@/components/RecordsList';
@@ -25,7 +24,6 @@ import {
   FolderOpen,
   Loader2,
   LogOut,
-  MoreHorizontal,
   PackagePlus,
   Printer,
   Settings,
@@ -44,6 +42,7 @@ import Billing from '@/components/Billing';
 import PrinterManager from '@/components/printing/PrinterManager';
 import PestControl from '@/components/pest/PestControl';
 import { startAutoRegisterScheduler } from '@/lib/autoRegisters';
+import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 
 type TabKey = 'daily' | 'auto' | 'archive' | 'ingresso' | 'cloud' | 'semilavorati' | 'firma-osa' | 'allergeni' | 'infestanti' | 'stampanti' | 'abbonamento';
@@ -77,8 +76,6 @@ const AUTO_ITEM: NavItem = {
   icon: Zap,
 };
 
-const MOBILE_PRIMARY: TabKey[] = ['daily', 'archive', 'ingresso', 'semilavorati'];
-
 export default function HaccpDashboard() {
   const { company: authCompany, signOut, refreshCompany } = useAuth();
   const [refreshTrigger, setRefreshTrigger] = useState(0);
@@ -86,7 +83,6 @@ export default function HaccpDashboard() {
   const [autoUnlocked, setAutoUnlocked] = useState(false);
   const [activeTab, setActiveTab] = useState<TabKey>('daily');
   const [pestToken, setPestToken] = useState<string | null>(null);
-  const [moreOpen, setMoreOpen] = useState(false);
   const [stats, setStats] = useState<{ total: number; thisMonth: number; thisYear: number; lastRecord: string | null }>({
     total: 0,
     thisMonth: 0,
@@ -100,6 +96,9 @@ export default function HaccpDashboard() {
   const [statsLoading, setStatsLoading] = useState(true);
   const secretClicksRef = useRef<number>(0);
   const secretTimerRef = useRef<number | null>(null);
+  // Barra di navigazione mobile: contenitore scorrevole e voce attiva da portare in vista.
+  const mobileNavRef = useRef<HTMLDivElement>(null);
+  const activeNavRef = useRef<HTMLButtonElement>(null);
 
   // Info azienda per i componenti (nome, P.IVA, indirizzo) derivate dal tenant attivo.
   const companyInfo: CompanyInfo = useMemo(() => {
@@ -114,6 +113,15 @@ export default function HaccpDashboard() {
   const navItems = useMemo(() => (autoUnlocked ? [...NAV_ITEMS.slice(0, 1), { ...AUTO_ITEM, description: AUTO_ITEM.description }, ...NAV_ITEMS.slice(1)] : NAV_ITEMS), [autoUnlocked]);
 
   const activeItem = useMemo(() => navItems.find((n) => n.key === activeTab) ?? NAV_ITEMS[0], [navItems, activeTab]);
+
+  // Mantiene la voce attiva centrata nella barra di navigazione mobile scorrevole.
+  useEffect(() => {
+    const nav = mobileNavRef.current;
+    const btn = activeNavRef.current;
+    if (!nav || !btn) return;
+    const target = btn.offsetLeft - nav.clientWidth / 2 + btn.clientWidth / 2;
+    nav.scrollTo({ left: Math.max(0, target), behavior: 'smooth' });
+  }, [activeTab]);
 
   // Sincronizza il form impostazioni con l'azienda attiva.
   useEffect(() => {
@@ -259,7 +267,6 @@ export default function HaccpDashboard() {
 
   const goTo = (key: TabKey) => {
     setActiveTab(key);
-    setMoreOpen(false);
   };
 
   // Trigger nascosto: triplo click sul sottotitolo sblocca la generazione automatica.
@@ -521,8 +528,8 @@ export default function HaccpDashboard() {
           </Card>
         )}
 
-        {/* Statistiche */}
-        <div className="mb-8 grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
+        {/* Statistiche: su mobile restano nella sezione iniziale per non rubare spazio alle altre */}
+        <div className={cn('mb-8 grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4', activeTab !== 'daily' && 'hidden lg:grid')}>
           {statCards.map((s) => (
             <Card key={s.label} className="hover-lift border-border/70 shadow-card">
               <CardContent className="flex items-center justify-between gap-3 p-4 sm:p-5">
@@ -550,91 +557,32 @@ export default function HaccpDashboard() {
 
       {/* ── Navigazione mobile ───────────────────────────────── */}
       <nav className="fixed inset-x-0 bottom-0 z-40 border-t border-border/60 bg-background/95 pb-[env(safe-area-inset-bottom)] backdrop-blur-xl lg:hidden">
-        <div className="grid grid-cols-5">
-          {MOBILE_PRIMARY.map((key) => {
-            const item = NAV_ITEMS.find((n) => n.key === key)!;
-            const active = activeTab === key;
+        <div
+          ref={mobileNavRef}
+          className="flex items-stretch gap-1 overflow-x-auto px-2 py-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+        >
+          {navItems.map((item) => {
+            const active = activeTab === item.key;
             return (
               <button
-                key={key}
+                key={item.key}
+                ref={active ? activeNavRef : undefined}
                 type="button"
-                onClick={() => goTo(key)}
+                onClick={() => goTo(item.key)}
                 aria-label={item.label}
                 aria-current={active ? 'page' : undefined}
                 className={[
-                  'relative flex min-h-[58px] flex-col items-center justify-center gap-1 px-1 py-2 text-[11px] font-medium leading-none transition-colors active:scale-95',
+                  'relative flex min-h-[58px] min-w-[72px] shrink-0 flex-col items-center justify-center gap-1 rounded-xl px-2 py-1.5 text-[11px] font-medium leading-none transition-colors active:scale-95',
                   active ? 'text-primary' : 'text-muted-foreground',
                 ].join(' ')}
               >
-                <span
-                  className={[
-                    'absolute inset-x-5 top-0 h-0.5 rounded-full transition-opacity',
-                    active ? 'bg-primary opacity-100' : 'opacity-0',
-                  ].join(' ')}
-                  aria-hidden
-                />
-                <span className={['grid h-8 w-12 place-items-center rounded-full transition-colors', active ? 'bg-primary/10' : ''].join(' ')}>
+                <span className={['grid h-8 w-11 place-items-center rounded-full transition-colors', active ? 'bg-primary/10' : ''].join(' ')}>
                   <item.icon className="h-5 w-5" />
                 </span>
-                <span className="max-w-full truncate">{item.short}</span>
+                <span className="max-w-[64px] truncate">{item.short}</span>
               </button>
             );
           })}
-          <Sheet open={moreOpen} onOpenChange={setMoreOpen}>
-            <button
-              type="button"
-              onClick={() => setMoreOpen(true)}
-              aria-label="Altre sezioni"
-              className={[
-                'relative flex min-h-[58px] flex-col items-center justify-center gap-1 px-1 py-2 text-[11px] font-medium leading-none transition-colors active:scale-95',
-                !MOBILE_PRIMARY.includes(activeTab) ? 'text-primary' : 'text-muted-foreground',
-              ].join(' ')}
-            >
-              <span
-                className={[
-                  'absolute inset-x-5 top-0 h-0.5 rounded-full transition-opacity',
-                  !MOBILE_PRIMARY.includes(activeTab) ? 'bg-primary opacity-100' : 'opacity-0',
-                ].join(' ')}
-                aria-hidden
-              />
-              <span className={['grid h-8 w-12 place-items-center rounded-full transition-colors', !MOBILE_PRIMARY.includes(activeTab) ? 'bg-primary/10' : ''].join(' ')}>
-                <MoreHorizontal className="h-5 w-5" />
-              </span>
-              <span>Altro</span>
-            </button>
-            <SheetContent side="bottom" className="max-h-[85dvh] overflow-y-auto rounded-t-2xl pb-8">
-              <SheetHeader className="text-left">
-                <SheetTitle>Altre sezioni</SheetTitle>
-                <SheetDescription className="text-xs">Tocca una voce per aprirla.</SheetDescription>
-              </SheetHeader>
-              <div className="mt-4 grid gap-2 sm:grid-cols-2">
-                {navItems
-                  .filter((n) => !MOBILE_PRIMARY.includes(n.key))
-                  .map((item) => {
-                    const active = activeTab === item.key;
-                    return (
-                      <button
-                        key={item.key}
-                        type="button"
-                        onClick={() => goTo(item.key)}
-                        className={[
-                          'flex items-center gap-3 rounded-xl border px-4 py-3.5 text-left transition-colors active:scale-[0.98]',
-                          active ? 'border-primary/40 bg-primary/10' : 'border-border/70 hover:bg-accent',
-                        ].join(' ')}
-                      >
-                        <span className={['grid h-10 w-10 shrink-0 place-items-center rounded-lg', active ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground'].join(' ')}>
-                          <item.icon className="h-5 w-5" />
-                        </span>
-                        <span className="min-w-0">
-                          <span className="block truncate text-[15px] font-semibold">{item.label}</span>
-                          <span className="mt-0.5 block text-xs leading-snug text-muted-foreground line-clamp-2">{item.description}</span>
-                        </span>
-                      </button>
-                    );
-                  })}
-              </div>
-            </SheetContent>
-          </Sheet>
         </div>
       </nav>
     </div>

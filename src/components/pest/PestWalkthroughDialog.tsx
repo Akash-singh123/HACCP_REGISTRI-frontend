@@ -137,7 +137,7 @@ export function PestWalkthroughDialog({ open, onOpenChange, companyId, stations,
               <CheckCircle2 className="h-6 w-6 text-success" />
               <p className="font-semibold">Giro di controllo completato</p>
             </div>
-            <div className="grid grid-cols-3 gap-3 text-center">
+            <div className="grid grid-cols-1 gap-3 text-center sm:grid-cols-3">
               <div className="rounded-xl border border-border bg-card p-3">
                 <p className="text-2xl font-bold">{checked}</p>
                 <p className="text-xs text-muted-foreground">Postazioni controllate</p>

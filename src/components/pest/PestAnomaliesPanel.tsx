@@ -484,7 +484,7 @@ function PestAnomalyDetailDialog({
 
             {/* Azioni correttive */}
             <div className="space-y-3">
-              <div className="flex items-center justify-between gap-2 border-b border-border/60 pb-2">
+              <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border/60 pb-2">
                 <div className="flex items-center gap-2">
                   <ClipboardList className="h-4 w-4 text-muted-foreground" />
                   <span className="font-semibold">Azioni correttive</span>
@@ -522,14 +522,14 @@ function PestAnomalyDetailDialog({
                           {a.completed_at && <span>Completata il {fmtDate(a.completed_at)}</span>}
                         </div>
                         {a.verification_notes && <p className="mt-2 text-xs text-muted-foreground">Verifica: {a.verification_notes}</p>}
-                        <div className="mt-2 flex items-center gap-1.5 border-t border-border/60 pt-2">
-                          <Button size="sm" variant="ghost" onClick={() => openEditAction(a)}>
+                        <div className="mt-2 flex flex-wrap items-center gap-1.5 border-t border-border/60 pt-2">
+                          <Button size="sm" variant="ghost" className="h-11 sm:h-10" onClick={() => openEditAction(a)}>
                             <Pencil className="h-4 w-4" /> Modifica
                           </Button>
                           <Button
                             size="sm"
                             variant="ghost"
-                            className="ml-auto text-destructive hover:bg-destructive/10 hover:text-destructive"
+                            className="ml-auto h-11 sm:h-10 text-destructive hover:bg-destructive/10 hover:text-destructive"
                             onClick={() => deleteAction(a)}
                           >
                             <Trash2 className="h-4 w-4" />
@@ -691,7 +691,7 @@ export function PestAnomaliesPanel({ companyId }: Props) {
               </div>
             </div>
             <div className="flex flex-wrap gap-2">
-              <Button variant="ghost" size="icon" onClick={() => void load()} title="Aggiorna">
+              <Button variant="ghost" size="icon" className="h-11 w-11 sm:h-10 sm:w-10" onClick={() => void load()} title="Aggiorna">
                 {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
               </Button>
               <Button onClick={openCreate}>
@@ -771,7 +771,7 @@ export function PestAnomaliesPanel({ companyId }: Props) {
                 </p>
               ) : (
                 <>
-                  <div className="hidden md:block">
+                  <div className="hidden md:block overflow-x-auto">
                     <Table>
                       <TableHeader>
                         <TableRow>
@@ -882,10 +882,11 @@ export function PestAnomaliesPanel({ companyId }: Props) {
                               <ListChecks className="h-3.5 w-3.5" /> {count}
                             </span>
                           </div>
-                          <div className="mt-3 flex items-center gap-1.5 border-t border-border/60 pt-3">
+                          <div className="mt-3 flex flex-wrap items-center gap-1.5 border-t border-border/60 pt-3">
                             <Button
                               size="sm"
                               variant="ghost"
+                              className="h-11"
                               onClick={(e) => {
                                 e.stopPropagation();
                                 openEdit(a);
@@ -896,7 +897,7 @@ export function PestAnomaliesPanel({ companyId }: Props) {
                             <Button
                               size="sm"
                               variant="ghost"
-                              className="ml-auto text-destructive hover:bg-destructive/10 hover:text-destructive"
+                              className="ml-auto h-11 text-destructive hover:bg-destructive/10 hover:text-destructive"
                               onClick={(e) => {
                                 e.stopPropagation();
                                 deleteAnomaly(a);

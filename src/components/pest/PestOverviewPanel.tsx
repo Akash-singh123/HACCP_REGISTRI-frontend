@@ -114,7 +114,7 @@ export function PestOverviewPanel({ companyId }: Props) {
 
   return (
     <div className="space-y-6 pt-2">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-2">
         <h4 className="section-title">Stato del monitoraggio</h4>
         <Button variant="ghost" size="sm" onClick={() => void load()} disabled={loading}>
           {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
@@ -180,8 +180,8 @@ export function PestOverviewPanel({ companyId }: Props) {
               </p>
             </div>
           ) : (
-            <div className="overflow-hidden rounded-xl border border-border/70">
-              <table className="w-full text-sm">
+            <div className="overflow-x-auto rounded-xl border border-border/70">
+              <table className="w-full min-w-[420px] text-sm">
                 <thead className="bg-muted/50 text-left text-xs uppercase tracking-wide text-muted-foreground">
                   <tr>
                     <th className="px-3 py-2 font-medium">Data</th>

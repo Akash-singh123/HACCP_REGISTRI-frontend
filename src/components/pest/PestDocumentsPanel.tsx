@@ -238,7 +238,7 @@ export function PestDocumentsPanel({ companyId }: Props) {
               </div>
             </div>
             <div className="flex flex-wrap gap-2">
-              <Button variant="ghost" size="icon" onClick={() => void load()} title="Aggiorna">
+              <Button variant="ghost" size="icon" className="h-11 w-11 sm:h-10 sm:w-10" onClick={() => void load()} title="Aggiorna">
                 {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
               </Button>
               <Button onClick={openCreate}>
@@ -298,17 +298,17 @@ export function PestDocumentsPanel({ companyId }: Props) {
                 </Badge>
 
                 <div className="ml-auto flex flex-wrap items-center gap-2">
-                  <div className="relative">
+                  <div className="relative w-full sm:w-[200px]">
                     <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                     <Input
                       value={search}
                       onChange={(e) => setSearch(e.target.value)}
                       placeholder="Cerca per nome"
-                      className="h-9 w-[200px] pl-8"
+                      className="h-9 w-full pl-8"
                     />
                   </div>
                   <Select value={filterCategory} onValueChange={setFilterCategory}>
-                    <SelectTrigger className="h-9 w-[190px]">
+                    <SelectTrigger className="h-9 w-full sm:w-[190px]">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
@@ -335,7 +335,7 @@ export function PestDocumentsPanel({ companyId }: Props) {
                 </p>
               ) : (
                 <>
-                  <div className="hidden md:block">
+                  <div className="hidden md:block overflow-x-auto">
                     <Table>
                       <TableHeader>
                         <TableRow>
@@ -430,10 +430,11 @@ export function PestDocumentsPanel({ companyId }: Props) {
                             )}
                             {d.uploaded_by_name && <span>Da {d.uploaded_by_name}</span>}
                           </div>
-                          <div className="mt-3 flex items-center gap-1.5 border-t border-border/60 pt-3">
+                          <div className="mt-3 flex flex-wrap items-center gap-1.5 border-t border-border/60 pt-3">
                             <Button
                               size="sm"
                               variant="ghost"
+                              className="h-11"
                               disabled={downloadingId === d.id}
                               onClick={() => void onDownload(d)}
                             >
@@ -444,13 +445,13 @@ export function PestDocumentsPanel({ companyId }: Props) {
                               )}
                               Scarica
                             </Button>
-                            <Button size="sm" variant="ghost" onClick={() => openEdit(d)}>
+                            <Button size="sm" variant="ghost" className="h-11" onClick={() => openEdit(d)}>
                               <Pencil className="h-4 w-4" /> Modifica
                             </Button>
                             <Button
                               size="sm"
                               variant="ghost"
-                              className="ml-auto text-destructive hover:bg-destructive/10 hover:text-destructive"
+                              className="ml-auto h-11 text-destructive hover:bg-destructive/10 hover:text-destructive"
                               onClick={() => onDelete(d)}
                             >
                               <Trash2 className="h-4 w-4" />

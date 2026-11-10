@@ -249,7 +249,7 @@ export default function AdminClienti() {
   return (
     <div className="app-shell min-h-screen">
       <header className="sticky top-0 z-30 border-b border-border/70 bg-card/80 backdrop-blur supports-[backdrop-filter]:bg-card/60">
-        <div className="mx-auto flex max-w-6xl items-center justify-between gap-3 px-4 py-3">
+        <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-2 px-4 py-3">
           <div className="flex min-w-0 items-center gap-3">
             <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-primary/10 text-primary">
               <ShieldCheck className="h-5 w-5" />
@@ -499,6 +499,7 @@ export default function AdminClienti() {
                   <Button
                     variant="outline"
                     size="icon"
+                    className="h-11 w-11 sm:h-10 sm:w-10"
                     onClick={() => setView('elenco')}
                     title="Torna all'elenco"
                   >
@@ -858,7 +859,7 @@ function InfoRow({ label, value }: { label: string; value: ReactNode }) {
   return (
     <div className="flex items-start justify-between gap-4 border-b border-border/50 pb-3 last:border-0 last:pb-0">
       <span className="field-label pt-0.5">{label}</span>
-      <span className="min-w-0 text-right text-sm font-medium">{value}</span>
+      <span className="min-w-0 break-words text-right text-sm font-medium">{value}</span>
     </div>
   );
 }
@@ -884,7 +885,7 @@ function ClientActionsMenu({
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <Button variant="ghost" size="icon" title="Azioni">
+        <Button variant="ghost" size="icon" className="h-11 w-11 sm:h-10 sm:w-10" title="Azioni">
           <MoreHorizontal className="h-4 w-4" />
         </Button>
       </DropdownMenuTrigger>
@@ -1371,7 +1372,7 @@ function UsersDialog({
             />
           </div>
           {newPassword.length > 0 && <PasswordChecklist value={newPassword} />}
-          <div className="flex items-center gap-3">
+          <div className="flex flex-wrap items-center gap-3">
             <Select value={newRole} onValueChange={setNewRole}>
               <SelectTrigger className="w-40">
                 <SelectValue />

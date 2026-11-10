@@ -333,16 +333,16 @@ export default function Login() {
             <Tabs value={mode} onValueChange={(v) => switchMode(v as Mode)}>
               <CardHeader className="border-b bg-muted/30 pb-0">
                 <TabsList className="grid w-full grid-cols-3">
-                  <TabsTrigger value="login">
-                    <LogIn className="mr-1.5 h-4 w-4" />
+                  <TabsTrigger value="login" className="text-xs sm:text-sm">
+                    <LogIn className="mr-1.5 hidden h-4 w-4 sm:block" />
                     Accedi
                   </TabsTrigger>
-                  <TabsTrigger value="register">
-                    <UserPlus className="mr-1.5 h-4 w-4" />
+                  <TabsTrigger value="register" className="text-xs sm:text-sm">
+                    <UserPlus className="mr-1.5 hidden h-4 w-4 sm:block" />
                     Registrati
                   </TabsTrigger>
-                  <TabsTrigger value="plans">
-                    <BadgeEuro className="mr-1.5 h-4 w-4" />
+                  <TabsTrigger value="plans" className="text-xs sm:text-sm">
+                    <BadgeEuro className="mr-1.5 hidden h-4 w-4 sm:block" />
                     Piani
                   </TabsTrigger>
                 </TabsList>

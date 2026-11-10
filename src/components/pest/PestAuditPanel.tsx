@@ -145,7 +145,7 @@ export function PestAuditPanel({ companyId }: Props) {
                 </CardDescription>
               </div>
             </div>
-            <Button variant="ghost" size="icon" onClick={() => void load()} title="Aggiorna">
+            <Button variant="ghost" size="icon" className="h-11 w-11 sm:h-10 sm:w-10" onClick={() => void load()} title="Aggiorna">
               {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
             </Button>
           </div>
@@ -153,7 +153,7 @@ export function PestAuditPanel({ companyId }: Props) {
         <CardContent className="space-y-4 pt-5">
           {/* Filtri */}
           <div className="flex flex-wrap items-center gap-2">
-            <div className="relative min-w-[200px] flex-1">
+            <div className="relative min-w-0 flex-1">
               <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
               <Input
                 value={search}
@@ -163,7 +163,7 @@ export function PestAuditPanel({ companyId }: Props) {
               />
             </div>
             <Select value={entity} onValueChange={setEntity}>
-              <SelectTrigger className="w-[200px]">
+              <SelectTrigger className="w-full sm:w-[200px]">
                 <SelectValue placeholder="Entità" />
               </SelectTrigger>
               <SelectContent>
@@ -176,7 +176,7 @@ export function PestAuditPanel({ companyId }: Props) {
               </SelectContent>
             </Select>
             <Select value={verb} onValueChange={setVerb}>
-              <SelectTrigger className="w-[170px]">
+              <SelectTrigger className="w-full sm:w-[170px]">
                 <SelectValue placeholder="Operazione" />
               </SelectTrigger>
               <SelectContent>
@@ -211,7 +211,7 @@ export function PestAuditPanel({ companyId }: Props) {
           ) : (
             <>
               {/* Tabella desktop */}
-              <div className="hidden md:block">
+              <div className="hidden md:block overflow-x-auto">
                 <Table>
                   <TableHeader>
                     <TableRow>

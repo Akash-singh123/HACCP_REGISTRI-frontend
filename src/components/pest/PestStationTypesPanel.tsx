@@ -295,15 +295,15 @@ export function PestStationTypesPanel({ companyId }: Props) {
                       <Badge variant="outline">Ogni {t.default_frequency_days} gg</Badge>
                     ) : null}
                   </div>
-                  <div className="mt-3 flex items-center gap-1.5 border-t border-border/60 pt-3">
-                    <Button size="sm" variant="ghost" onClick={() => onEdit(t)}>
+                  <div className="mt-3 flex flex-wrap items-center gap-1.5 border-t border-border/60 pt-3">
+                    <Button size="sm" variant="ghost" className="h-11" onClick={() => onEdit(t)}>
                       <Pencil className="h-4 w-4" />
                       Modifica
                     </Button>
                     <Button
                       size="sm"
                       variant="ghost"
-                      className="ml-auto text-destructive hover:bg-destructive/10 hover:text-destructive"
+                      className="ml-auto h-11 text-destructive hover:bg-destructive/10 hover:text-destructive"
                       onClick={() => onDelete(t)}
                     >
                       <Trash2 className="h-4 w-4" />

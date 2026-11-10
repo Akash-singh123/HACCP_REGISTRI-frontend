@@ -230,7 +230,7 @@ export function PestStationsPanel({ companyId, initialToken, onTokenConsumed }: 
               </div>
             </div>
             <div className="flex flex-wrap gap-2">
-              <Button variant="ghost" size="icon" onClick={() => void load()} title="Aggiorna">
+              <Button variant="ghost" size="icon" className="h-11 w-11 sm:h-10 sm:w-10" onClick={() => void load()} title="Aggiorna">
                 {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
               </Button>
               <Button variant="outline" onClick={() => setScanOpen(true)}>
@@ -271,7 +271,7 @@ export function PestStationsPanel({ companyId, initialToken, onTokenConsumed }: 
           ) : (
             <>
               {/* Tabella desktop */}
-              <div className="hidden md:block">
+              <div className="hidden md:block overflow-x-auto">
                 <Table>
                   <TableHeader>
                     <TableRow>
@@ -351,17 +351,17 @@ export function PestStationsPanel({ companyId, initialToken, onTokenConsumed }: 
                         </span>
                         {areaName(s.area_id) && <><span aria-hidden>·</span><span>{areaName(s.area_id)}</span></>}
                       </div>
-                      <div className="mt-3 flex items-center gap-1.5 border-t border-border/60 pt-3">
-                        <Button size="sm" variant="ghost" onClick={() => { setDetailId(s.id); setDetailOpen(true); }}>
+                      <div className="mt-3 flex flex-wrap items-center gap-1.5 border-t border-border/60 pt-3">
+                        <Button size="sm" variant="ghost" className="h-11" onClick={() => { setDetailId(s.id); setDetailOpen(true); }}>
                           <Eye className="h-4 w-4" /> Scheda
                         </Button>
-                        <Button size="sm" variant="ghost" onClick={() => { setQrStation(s); setQrOpen(true); }}>
+                        <Button size="sm" variant="ghost" className="h-11" onClick={() => { setQrStation(s); setQrOpen(true); }}>
                           <QrCode className="h-4 w-4" /> QR
                         </Button>
-                        <Button size="sm" variant="ghost" className="ml-auto" onClick={() => openEdit(s)}>
+                        <Button size="sm" variant="ghost" className="ml-auto h-11" onClick={() => openEdit(s)}>
                           <Pencil className="h-4 w-4" /> Modifica
                         </Button>
-                        <Button size="sm" variant="ghost" className="text-destructive hover:text-destructive" onClick={() => onDeleteRow(s)}>
+                        <Button size="sm" variant="ghost" className="h-11 text-destructive hover:text-destructive" onClick={() => onDeleteRow(s)}>
                           <Trash2 className="h-4 w-4" />
                         </Button>
                       </div>

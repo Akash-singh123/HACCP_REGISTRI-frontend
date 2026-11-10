@@ -352,7 +352,7 @@ export const HaccpForm: React.FC<HaccpFormProps> = ({ company, onRecordSaved }) 
                             )}
                           >
                             <div className="flex items-start justify-between gap-2">
-                              <Label htmlFor={item.id} className="field-label">
+                              <Label htmlFor={item.id} className="field-label min-w-0 break-words">
                                 {item.name}
                               </Label>
                               <Badge

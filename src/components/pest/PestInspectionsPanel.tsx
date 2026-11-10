@@ -127,7 +127,7 @@ export function PestInspectionsPanel({ companyId }: Props) {
               </div>
             </div>
             <div className="flex flex-wrap gap-2">
-              <Button variant="ghost" size="icon" onClick={() => void load()} title="Aggiorna">
+              <Button variant="ghost" size="icon" className="h-11 w-11 sm:h-10 sm:w-10" onClick={() => void load()} title="Aggiorna">
                 {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
               </Button>
               <Button variant="outline" onClick={() => setWalkOpen(true)} disabled={dueStations.length === 0}>
@@ -216,7 +216,7 @@ export function PestInspectionsPanel({ companyId }: Props) {
           ) : (
             <>
               {/* Tabella desktop */}
-              <div className="hidden md:block">
+              <div className="hidden md:block overflow-x-auto">
                 <Table>
                   <TableHeader>
                     <TableRow>
