@@ -241,7 +241,7 @@ export default function Landing() {
       <header className="sticky top-0 z-40 border-b border-border/60 bg-background/80 backdrop-blur supports-[backdrop-filter]:bg-background/70">
         <div className="mx-auto flex h-16 w-full max-w-6xl items-center justify-between gap-4 px-4">
           <Link to="/" className="flex items-center gap-2.5">
-            <img src="/brand/alimex_logo.svg" alt={BRAND} className="h-9 w-auto" />
+            <img src="/brand/alimex_logo.svg" alt={BRAND} className="h-11 w-auto" />
           </Link>
 
           <nav className="hidden items-center gap-7 text-sm text-muted-foreground md:flex">
@@ -636,7 +636,7 @@ export default function Landing() {
       <footer className="border-t border-border/60 py-10">
         <div className="mx-auto flex w-full max-w-6xl flex-col items-center justify-between gap-4 px-4 text-center sm:flex-row sm:text-left">
           <div className="flex items-center gap-2.5">
-            <img src="/brand/alimex_logo.svg" alt={BRAND} className="h-8 w-auto" />
+            <img src="/brand/alimex_logo.svg" alt={BRAND} className="h-10 w-auto" />
             <p className="text-xs text-muted-foreground">Gestionale HACCP per la ristorazione</p>
           </div>
 

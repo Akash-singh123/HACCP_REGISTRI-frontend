@@ -362,7 +362,7 @@ export default function HaccpDashboard() {
       <header className="sticky top-0 z-40 border-b border-border/60 bg-background/85 backdrop-blur-xl">
         <div className="mx-auto flex h-16 max-w-7xl items-center gap-3 px-4 sm:px-6 lg:px-8">
           <div className="flex min-w-0 items-center gap-3">
-            <img src="/brand/alimex_logo.svg" alt="Alimex" className="h-9 w-auto shrink-0" />
+            <img src="/brand/alimex_logo.svg" alt="Alimex" className="h-12 w-auto shrink-0" />
             <p className="hidden cursor-default select-none text-xs text-muted-foreground sm:block" onClick={handleSecretClick}>
               Gestione Automatizzata Registri
             </p>

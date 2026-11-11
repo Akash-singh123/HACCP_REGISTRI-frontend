@@ -251,9 +251,7 @@ export default function AdminClienti() {
       <header className="sticky top-0 z-30 border-b border-border/70 bg-card/80 backdrop-blur supports-[backdrop-filter]:bg-card/60">
         <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-2 px-4 py-3">
           <div className="flex min-w-0 items-center gap-3">
-            <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-primary/10 text-primary">
-              <ShieldCheck className="h-5 w-5" />
-            </span>
+            <img src="/brand/alimex_logo.svg" alt="Alimex" className="h-10 w-auto shrink-0" />
             <div className="min-w-0">
               <h1 className="truncate text-base font-semibold">Pannello gestione clienti</h1>
               <p className="truncate text-xs text-muted-foreground">{user?.email}</p>

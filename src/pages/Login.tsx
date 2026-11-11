@@ -252,8 +252,8 @@ export default function Login() {
 
             <div className="relative">
               <div className="flex items-center gap-3">
-                <span className="inline-flex h-12 items-center rounded-xl bg-white px-3.5 shadow-sm ring-1 ring-inset ring-black/5">
-                  <img src="/brand/alimex_logo.svg" alt="Alimex" className="h-7 w-auto" />
+                <span className="inline-flex h-14 items-center rounded-xl bg-white px-4 shadow-sm ring-1 ring-inset ring-black/5">
+                  <img src="/brand/alimex_logo.svg" alt="Alimex" className="h-10 w-auto" />
                 </span>
                 <p className="text-xs text-primary-foreground/75">Gestionale HACCP per la ristorazione</p>
               </div>
@@ -306,7 +306,7 @@ export default function Login() {
         {/* ------------------------------------------------------ FORM AUTENTICAZIONE */}
         <section className="w-full animate-slide-up lg:w-[30rem] lg:shrink-0">
           <div className="mb-5 flex flex-col items-center text-center lg:hidden">
-            <img src="/brand/alimex_logo.svg" alt="Alimex" className="h-12 w-auto" />
+            <img src="/brand/alimex_logo.svg" alt="Alimex" className="h-14 w-auto" />
             <p className="mt-3 text-sm text-muted-foreground">
               Gestione allergeni e registri HACCP per la ristorazione
             </p>
