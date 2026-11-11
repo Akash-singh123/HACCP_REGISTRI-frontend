@@ -131,6 +131,9 @@ if (!sw) {
 
 if (!hasFile('manifest.webmanifest')) fail('manifest PWA assente');
 if (!hasFile('brand/alimex_logo.svg')) fail('logo Alimex assente (brand/alimex_logo.svg)');
+for (const icon of ['brand/icon-192.png', 'brand/icon-512.png', 'brand/icon-maskable-512.png', 'brand/apple-touch-icon.png']) {
+  if (!hasFile(icon)) fail(`icona app assente (${icon})`);
+}
 
 const indexFile = files.find((f) => rel(f) === 'index.html');
 if (!indexFile) {

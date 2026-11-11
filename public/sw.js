@@ -9,9 +9,9 @@
  * verso l'API (Supabase) non vengono mai messe in cache.
  */
 
-const CACHE = 'haccp-shell-v1';
+const CACHE = 'haccp-shell-v2';
 const OFFLINE_URL = '/index.html';
-const SHELL = ['/', OFFLINE_URL, '/manifest.webmanifest', '/brand/alimex_logo.svg'];
+const SHELL = ['/', OFFLINE_URL, '/manifest.webmanifest', '/brand/icon-192.png'];
 
 self.addEventListener('install', (event) => {
   event.waitUntil(
@@ -92,8 +92,8 @@ self.addEventListener('push', (event) => {
   event.waitUntil(
     self.registration.showNotification(data.title, {
       body: data.body,
-      icon: '/brand/alimex_logo.svg',
-      badge: '/brand/alimex_logo.svg',
+      icon: '/brand/icon-192.png',
+      badge: '/brand/icon-192.png',
       lang: 'it',
       data: { url: data.url || '/' },
     })
