@@ -290,7 +290,7 @@ async function handleDispatch(req: Request): Promise<Response> {
     const { critical, warning } = countBySeverity(alerts);
     const top = alerts[0];
     const payload = JSON.stringify({
-      title: 'Avvisi HACCP',
+      title: 'Alimex · Avvisi HACCP',
       body: `${alerts.length} avvisi (${critical} critici, ${warning} da controllare). ${top.title}.`,
       url: '/',
     });

@@ -130,8 +130,7 @@ if (!sw) {
 }
 
 if (!hasFile('manifest.webmanifest')) fail('manifest PWA assente');
-if (!hasFile('icons/icon.svg')) fail('icona PWA assente (icons/icon.svg)');
-if (!hasFile('icons/icon-maskable.svg')) fail('icona PWA maskable assente (icons/icon-maskable.svg)');
+if (!hasFile('brand/alimex_logo.svg')) fail('logo Alimex assente (brand/alimex_logo.svg)');
 
 const indexFile = files.find((f) => rel(f) === 'index.html');
 if (!indexFile) {

@@ -30,7 +30,7 @@ import {
 } from 'lucide-react';
 
 /** Nome commerciale mostrato nella landing: modifica qui per rinominare il prodotto. */
-const BRAND = 'Sistema HACCP';
+const BRAND = 'Alimex';
 
 function intervalLabel(interval: string): string {
   if (interval === 'month') return 'mese';
@@ -241,10 +241,7 @@ export default function Landing() {
       <header className="sticky top-0 z-40 border-b border-border/60 bg-background/80 backdrop-blur supports-[backdrop-filter]:bg-background/70">
         <div className="mx-auto flex h-16 w-full max-w-6xl items-center justify-between gap-4 px-4">
           <Link to="/" className="flex items-center gap-2.5">
-            <span className="grid h-9 w-9 place-items-center rounded-xl bg-primary text-primary-foreground shadow-glow">
-              <ShieldCheck className="h-5 w-5" />
-            </span>
-            <span className="text-sm font-semibold tracking-tight sm:text-base">{BRAND}</span>
+            <img src="/brand/alimex_logo.svg" alt={BRAND} className="h-9 w-auto" />
           </Link>
 
           <nav className="hidden items-center gap-7 text-sm text-muted-foreground md:flex">
@@ -639,13 +636,8 @@ export default function Landing() {
       <footer className="border-t border-border/60 py-10">
         <div className="mx-auto flex w-full max-w-6xl flex-col items-center justify-between gap-4 px-4 text-center sm:flex-row sm:text-left">
           <div className="flex items-center gap-2.5">
-            <span className="grid h-8 w-8 place-items-center rounded-lg bg-primary text-primary-foreground">
-              <ShieldCheck className="h-4 w-4" />
-            </span>
-            <div>
-              <p className="text-sm font-semibold">{BRAND}</p>
-              <p className="text-xs text-muted-foreground">Gestionale HACCP per la ristorazione</p>
-            </div>
+            <img src="/brand/alimex_logo.svg" alt={BRAND} className="h-8 w-auto" />
+            <p className="text-xs text-muted-foreground">Gestionale HACCP per la ristorazione</p>
           </div>
 
           <nav className="flex flex-wrap items-center justify-center gap-x-5 gap-y-2 text-sm text-muted-foreground">

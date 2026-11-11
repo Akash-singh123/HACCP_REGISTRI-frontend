@@ -102,7 +102,7 @@ async function handleSendTest(ctx: GuardContext): Promise<Response> {
 
   configureVapid();
   const payload = JSON.stringify({
-    title: 'Sistema HACCP',
+    title: 'Alimex',
     body: 'Notifica di prova: le notifiche sono attive.',
     url: '/',
   });
@@ -119,6 +119,12 @@ async function handleSendTest(ctx: GuardContext): Promise<Response> {
       sent++;
     } catch (err) {
       failed++;
+      // Diagnostica: senza questo log un invio rifiutato dal push service
+      // (tipicamente VAPID non allineati) resterebbe invisibile.
+      console.error('[push.send-test] invio fallito', {
+        statusCode: (err as { statusCode?: number }).statusCode,
+        body: (err as { body?: string }).body ?? (err as Error).message,
+      });
       // 404/410: la sottoscrizione non è più valida (dispositivo rimosso/permesso
       // revocato) -> la eliminiamo, senza far fallire l'intera richiesta.
       const statusCode = (err as { statusCode?: number }).statusCode;

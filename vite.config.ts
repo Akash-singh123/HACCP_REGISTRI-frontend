@@ -9,7 +9,7 @@ import { obfuscator } from "rollup-obfuscator";
 const COPYRIGHT =
   "© " +
   new Date().getFullYear() +
-  " Sistema HACCP — Tutti i diritti riservati. Software proprietario: copia, " +
+  " Alimex — Tutti i diritti riservati. Software proprietario: copia, " +
   "distribuzione o riutilizzo non autorizzati sono vietati.";
 const BUILD_ID = new Date().toISOString();
 

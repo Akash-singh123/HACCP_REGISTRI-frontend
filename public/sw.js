@@ -1,4 +1,4 @@
-/*! © 2026 Sistema HACCP — Tutti i diritti riservati. Software proprietario: copia, distribuzione o riutilizzo non autorizzati sono vietati. */
+/*! © 2026 Alimex — Tutti i diritti riservati. Software proprietario: copia, distribuzione o riutilizzo non autorizzati sono vietati. */
 /*
  * Service worker della PWA.
  *  - Conserva in cache la "shell" dell'applicazione per l'avvio rapido e per
@@ -11,7 +11,7 @@
 
 const CACHE = 'haccp-shell-v1';
 const OFFLINE_URL = '/index.html';
-const SHELL = ['/', OFFLINE_URL, '/manifest.webmanifest', '/favicon.svg', '/icons/icon.svg'];
+const SHELL = ['/', OFFLINE_URL, '/manifest.webmanifest', '/brand/alimex_logo.svg'];
 
 self.addEventListener('install', (event) => {
   event.waitUntil(
@@ -81,7 +81,7 @@ self.addEventListener('fetch', (event) => {
 
 // Notifiche push ricevute dal backend.
 self.addEventListener('push', (event) => {
-  let data = { title: 'Sistema HACCP', body: 'Hai una nuova notifica.', url: '/' };
+  let data = { title: 'Alimex', body: 'Hai una nuova notifica.', url: '/' };
   if (event.data) {
     try {
       data = Object.assign(data, event.data.json());
@@ -92,8 +92,8 @@ self.addEventListener('push', (event) => {
   event.waitUntil(
     self.registration.showNotification(data.title, {
       body: data.body,
-      icon: '/icons/icon.svg',
-      badge: '/icons/icon.svg',
+      icon: '/brand/alimex_logo.svg',
+      badge: '/brand/alimex_logo.svg',
       lang: 'it',
       data: { url: data.url || '/' },
     })

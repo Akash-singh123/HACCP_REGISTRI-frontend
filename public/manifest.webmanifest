@@ -1,6 +1,6 @@
 {
-  "name": "Sistema HACCP — Gestione Automatizzata Registri",
-  "short_name": "Sistema HACCP",
+  "name": "Alimex — Gestionale HACCP",
+  "short_name": "Alimex",
   "description": "Gestionale HACCP: registri, allergeni, semilavorati, controllo infestanti e stampa etichette.",
   "lang": "it",
   "dir": "ltr",
@@ -15,13 +15,13 @@
   "categories": ["business", "productivity", "food"],
   "icons": [
     {
-      "src": "/icons/icon.svg",
+      "src": "/brand/alimex_logo.svg",
       "sizes": "any",
       "type": "image/svg+xml",
       "purpose": "any"
     },
     {
-      "src": "/icons/icon-maskable.svg",
+      "src": "/brand/alimex_logo.svg",
       "sizes": "any",
       "type": "image/svg+xml",
       "purpose": "maskable"

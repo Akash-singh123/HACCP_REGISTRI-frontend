@@ -157,7 +157,7 @@ export function renderGuardBlock(reason: GuardBlockReason): void {
     '<p style="font-size:12px;line-height:1.5;color:#64748b;margin:0">' +
     '\u00a9 ' +
     new Date().getFullYear() +
-    ' Sistema HACCP \u2014 Tutti i diritti riservati. ' +
+    ' Alimex \u2014 Tutti i diritti riservati. ' +
     'Copia, distribuzione o riutilizzo non autorizzati sono vietati.' +
     '</p>' +
     '</div>';

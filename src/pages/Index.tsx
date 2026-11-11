@@ -28,7 +28,6 @@ import {
   Printer,
   Settings,
   ShieldAlert,
-  ShieldCheck,
   Signature,
   TrendingUp,
   Zap,
@@ -363,15 +362,10 @@ export default function HaccpDashboard() {
       <header className="sticky top-0 z-40 border-b border-border/60 bg-background/85 backdrop-blur-xl">
         <div className="mx-auto flex h-16 max-w-7xl items-center gap-3 px-4 sm:px-6 lg:px-8">
           <div className="flex min-w-0 items-center gap-3">
-            <div className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-gradient-to-br from-primary to-cyan-500 text-primary-foreground shadow-glow">
-              <ShieldCheck className="h-5 w-5" />
-            </div>
-            <div className="min-w-0 leading-tight">
-              <h1 className="truncate text-[15px] font-bold tracking-tight sm:text-base">Sistema HACCP</h1>
-              <p className="hidden cursor-default select-none text-xs text-muted-foreground sm:block" onClick={handleSecretClick}>
-                Gestione Automatizzata Registri
-              </p>
-            </div>
+            <img src="/brand/alimex_logo.svg" alt="Alimex" className="h-9 w-auto shrink-0" />
+            <p className="hidden cursor-default select-none text-xs text-muted-foreground sm:block" onClick={handleSecretClick}>
+              Gestione Automatizzata Registri
+            </p>
           </div>
 
           <div className="ml-auto flex items-center gap-1.5 sm:gap-2">
