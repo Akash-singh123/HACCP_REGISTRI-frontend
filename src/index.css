@@ -159,29 +159,58 @@
     background-color: hsl(var(--primary) / 0.18);
   }
 
-  /* Campi data/ora nativi: l'input shadcn usa "display: flex", che nei browser
-     WebKit/Blink fa stirare i segmenti della data fino ai bordi. Il tipo di
-     campo viene gestito nel componente Input (classe "block" al posto di "flex"). */
-
-  /* iOS allinea il valore al centro in modo anomalo: lo riportiamo a sinistra. */
-  input[type='date']::-webkit-date-and-time-value,
-  input[type='time']::-webkit-date-and-time-value {
+  /* --- Campi data/ora nativi -------------------------------------------
+     Su iOS WebKit assegna a questi campi l'aspetto "menulist button" e poi
+     riscrive la nostra geometria: impone una min-width (la data più lunga
+     della lingua), forza box-sizing: content-box e una min-height. Con
+     width: 100% il campo diventa quindi largo quanto il contenuto più
+     padding e bordo, sborda dal contenitore e risulta più alto degli altri.
+     "appearance: none" disattiva quel trattamento: il picker nativo si apre
+     comunque al tocco, ma la geometria resta quella che scriviamo noi. */
+  input[type='date'],
+  input[type='time'],
+  input[type='datetime-local'],
+  input[type='month'],
+  input[type='week'] {
+    -webkit-appearance: none; /* iOS < 15.4 legge solo la forma prefissata */
+    appearance: none;
+    display: block;
+    box-sizing: border-box;
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
     text-align: left;
   }
 
-  input[type='date']::-webkit-datetime-edit,
-  input[type='time']::-webkit-datetime-edit {
+  /* iOS centra il valore nel proprio foglio di stile e un campo vuoto
+     collassa: lo riportiamo a sinistra riservando una riga di altezza. */
+  input[type='date']::-webkit-date-and-time-value,
+  input[type='time']::-webkit-date-and-time-value,
+  input[type='datetime-local']::-webkit-date-and-time-value,
+  input[type='month']::-webkit-date-and-time-value,
+  input[type='week']::-webkit-date-and-time-value {
+    margin: 0;
+    text-align: left;
+    min-height: 1.2em;
+    min-height: 1lh;
+  }
+
+  /* I motori desktop aggiungono qualche pixel di padding interno al campo. */
+  input::-webkit-datetime-edit,
+  input::-webkit-datetime-edit-fields-wrapper {
     padding: 0;
   }
 
   /* Icona calendario: spaziata dal bordo e con feedback al passaggio. */
-  input[type='date']::-webkit-calendar-picker-indicator {
+  input::-webkit-calendar-picker-indicator {
+    padding-block: 0;
+    margin-block: 0;
     margin-left: 0.5rem;
     cursor: pointer;
     opacity: 0.6;
   }
 
-  input[type='date']::-webkit-calendar-picker-indicator:hover {
+  input::-webkit-calendar-picker-indicator:hover {
     opacity: 1;
   }
 }
