@@ -607,14 +607,14 @@ export default function HaccpDashboard() {
                   aria-label={item.label}
                   aria-current={active ? 'page' : undefined}
                   className={cn(
-                    'group flex min-h-[78px] min-w-[90px] shrink-0 snap-center flex-col items-center justify-center gap-1.5 rounded-2xl px-2.5 py-2 text-[12px] font-semibold leading-none transition-all duration-200',
+                    'group flex min-h-[72px] min-w-[84px] shrink-0 snap-center flex-col items-center justify-center gap-1 rounded-2xl px-2 py-1.5 text-[12px] font-semibold leading-none transition-all duration-200',
                     !active && 'text-muted-foreground hover:bg-accent/60 hover:text-foreground',
                   )}
                   style={active ? { backgroundColor: `hsl(${item.accent.from} / 0.12)`, color: `hsl(${item.accent.from})` } : undefined}
                 >
                   <span
                     className={cn(
-                      'grid h-10 w-10 place-items-center rounded-2xl transition-all duration-200',
+                      'grid h-9 w-9 place-items-center rounded-2xl transition-all duration-200',
                       active ? 'text-white shadow-glow' : 'group-hover:scale-105',
                     )}
                     style={
@@ -623,9 +623,9 @@ export default function HaccpDashboard() {
                         : { backgroundColor: `hsl(${item.accent.from} / 0.13)`, color: `hsl(${item.accent.from})` }
                     }
                   >
-                    <item.icon className="h-[22px] w-[22px]" />
+                    <item.icon className="h-5 w-5" />
                   </span>
-                  <span className="max-w-[78px] truncate">{item.short}</span>
+                  <span className="max-w-[72px] truncate">{item.short}</span>
                 </button>
               );
             })}
