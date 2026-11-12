@@ -41,6 +41,7 @@ const Billing = lazy(() => import('@/components/Billing'));
 const PrinterManager = lazy(() => import('@/components/printing/PrinterManager'));
 const PestControl = lazy(() => import('@/components/pest/PestControl'));
 import { PushSettingsRow, PwaInstallBanner } from '@/components/Pwa';
+import { OfflineSyncBanner } from '@/components/OfflineSyncBanner';
 import { NotificationCenter } from '@/components/NotificationCenter';
 import { startAutoRegisterScheduler } from '@/lib/autoRegisters';
 import { cn } from '@/lib/utils';
@@ -550,6 +551,9 @@ export default function HaccpDashboard() {
             </CardContent>
           </Card>
         )}
+
+        {/* Stato dei registri salvati offline (compare solo se c'è qualcosa da sincronizzare) */}
+        <OfflineSyncBanner />
 
         {/* Installazione PWA / attivazione notifiche (compare solo se utile) */}
         <PwaInstallBanner companyId={authCompany?.id ?? null} />

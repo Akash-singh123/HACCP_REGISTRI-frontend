@@ -4,6 +4,7 @@ import './index.css';
 import ErrorBoundary from '@/components/ErrorBoundary';
 import { installAppGuard } from '@/lib/appGuard';
 import { applyServiceWorkerUpdate, registerServiceWorker, setupInstallPrompt } from '@/lib/pwa';
+import { initRecordSync } from '@/lib/recordSync';
 import { toast } from 'sonner';
 
 // Protezione anti-copia: se origine, integrità o contesto non sono validi,
@@ -12,6 +13,9 @@ const canStart = installAppGuard();
 
 if (canStart) {
   setupInstallPrompt();
+
+  // Sincronizzazione dei registri HACCP compilati offline (coda + retry automatico).
+  initRecordSync();
 
   // Aggiornamento della PWA: l'utente decide quando applicarlo (nessun reload a sorpresa).
   registerServiceWorker(() => {

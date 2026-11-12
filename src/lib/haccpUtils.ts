@@ -3,7 +3,8 @@ import { HaccpRecord, CompanyInfo, Equipment, EquipmentKind } from '@/types/hacc
 // uno ZIP: vengono caricati on demand (code-splitting) invece che all'avvio.
 import type { jsPDF } from 'jspdf';
 import { getOsaSignature, addSignatureToPdf } from './osaSignature';
-import { activeData } from './api';
+import { activeData, ApiError, getActiveCompany, type RecordUpsertPayload } from './api';
+import { enqueueRecord, getPendingRecords, removePendingRecord, clearPendingRecords, type PendingRecord } from './offlineQueue';
 
 type JsPdfConstructor = typeof import('jspdf').default;
 let jsPdfConstructor: JsPdfConstructor | null = null;
@@ -119,44 +120,134 @@ export const createHaccpRecord = (
 
 // Accesso ai dati dei registri: backend Supabase, isolato per azienda.
 // Tutte le operazioni sono asincrone e passano dal layer API (Zero Trust Client).
+
+/** Esito di un salvataggio: `queued` indica che il registro è stato messo in
+ *  coda offline (verrà inviato appena la connessione torna disponibile). */
+export interface SaveResult {
+  queued: boolean;
+}
+
+const toUpsertPayload = (record: HaccpRecord): RecordUpsertPayload => ({
+  date: record.date,
+  temperatures: record.temperatures,
+  cleaning: record.cleaning,
+  notes: record.notes,
+  signature: record.signature,
+});
+
+/** Un errore di rete (fetch fallita) ha sempre status 0 nel layer API. */
+const isNetworkError = (err: unknown): boolean => err instanceof ApiError && err.status === 0;
+
+/** Mette un registro in coda offline. Ritorna false se manca l'azienda attiva. */
+const queueRecord = async (payload: RecordUpsertPayload): Promise<boolean> => {
+  const companyId = getActiveCompany();
+  if (!companyId) return false;
+  await enqueueRecord(companyId, payload);
+  return true;
+};
+
+const queueRecords = async (payloads: RecordUpsertPayload[]): Promise<boolean> => {
+  const companyId = getActiveCompany();
+  if (!companyId) return false;
+  for (const payload of payloads) await enqueueRecord(companyId, payload);
+  return true;
+};
+
+/** Ricostruisce il registro "virtuale" da un elemento ancora in coda. */
+const pendingToRecord = (item: PendingRecord): HaccpRecord => {
+  const iso = new Date(item.queuedAt).toISOString();
+  return {
+    id: `haccp_${item.date}`,
+    date: item.date,
+    temperatures: item.payload.temperatures ?? {},
+    cleaning: item.payload.cleaning,
+    notes: item.payload.notes ?? '',
+    signature: item.payload.signature ?? '',
+    createdAt: iso,
+    updatedAt: iso,
+  };
+};
+
+/**
+ * Registri dell'azienda: quelli del backend più quelli ancora in coda offline,
+ * così un registro compilato senza rete è subito visibile in archivio.
+ * In caso di sovrapposizione vince la versione locale (più recente).
+ */
 export const getRecords = async (): Promise<HaccpRecord[]> => {
   const { records } = await activeData.records.list();
-  return records;
+  const companyId = getActiveCompany();
+  if (!companyId) return records;
+
+  let pending: PendingRecord[] = [];
+  try {
+    pending = await getPendingRecords(companyId);
+  } catch {
+    pending = [];
+  }
+  if (!pending.length) return records;
+
+  const byDate = new Map<string, HaccpRecord>();
+  for (const record of records) byDate.set(record.date, record);
+  for (const item of pending) byDate.set(item.date, pendingToRecord(item));
+  return Array.from(byDate.values()).sort((a, b) => a.date.localeCompare(b.date));
 };
 
-export const saveRecord = async (record: HaccpRecord): Promise<void> => {
-  await activeData.records.upsert({
-    date: record.date,
-    temperatures: record.temperatures,
-    cleaning: record.cleaning,
-    notes: record.notes,
-    signature: record.signature,
-  });
+/**
+ * Salva un registro. Se la rete non è disponibile il salvataggio finisce nella
+ * coda offline invece di andare perso; la sincronizzazione è automatica.
+ */
+export const saveRecord = async (record: HaccpRecord): Promise<SaveResult> => {
+  const payload = toUpsertPayload(record);
+  const offline = typeof navigator !== 'undefined' && navigator.onLine === false;
+  if (offline && (await queueRecord(payload))) return { queued: true };
+
+  try {
+    await activeData.records.upsert(payload);
+    return { queued: false };
+  } catch (err) {
+    if (isNetworkError(err) && (await queueRecord(payload))) return { queued: true };
+    throw err;
+  }
 };
 
-export const saveRecords = async (records: HaccpRecord[]): Promise<void> => {
-  if (!records.length) return;
-  await activeData.records.upsertMany(
-    records.map((record) => ({
-      date: record.date,
-      temperatures: record.temperatures,
-      cleaning: record.cleaning,
-      notes: record.notes,
-      signature: record.signature,
-    }))
-  );
+/** Salva più registri. Come saveRecord, gestisce automaticamente la coda offline. */
+export const saveRecords = async (records: HaccpRecord[]): Promise<SaveResult> => {
+  if (!records.length) return { queued: false };
+  const payloads = records.map(toUpsertPayload);
+  const offline = typeof navigator !== 'undefined' && navigator.onLine === false;
+  if (offline && (await queueRecords(payloads))) return { queued: true };
+
+  try {
+    await activeData.records.upsertMany(payloads);
+    return { queued: false };
+  } catch (err) {
+    if (isNetworkError(err) && (await queueRecords(payloads))) return { queued: true };
+    throw err;
+  }
 };
 
 export const deleteRecordByDate = async (date: string): Promise<void> => {
   await activeData.records.deleteByDate(date);
+  // Rimuove anche l'eventuale copia in coda, per non farla riapparire al sync.
+  const companyId = getActiveCompany();
+  if (companyId) await removePendingRecord(companyId, date);
 };
 
 export const deleteRecordsByMonth = async (year: number, month: number): Promise<void> => {
   await activeData.records.deleteByMonth(year, month);
+  const companyId = getActiveCompany();
+  if (!companyId) return;
+  const prefix = `${year}-${String(month).padStart(2, '0')}`;
+  const pending = await getPendingRecords(companyId);
+  for (const item of pending) {
+    if (item.date.startsWith(prefix)) await removePendingRecord(companyId, item.date);
+  }
 };
 
 export const deleteAllRecords = async (): Promise<void> => {
   await activeData.records.deleteAll();
+  const companyId = getActiveCompany();
+  if (companyId) await clearPendingRecords(companyId);
 };
 
 export const getRecordsByMonth = async (year: number, month: number): Promise<HaccpRecord[]> => {

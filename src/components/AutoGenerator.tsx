@@ -80,17 +80,25 @@ export const AutoGenerator: React.FC<AutoGeneratorProps> = ({ company, onGenerat
 
       // Salvataggio a blocchi per ridurre il numero di richieste al backend.
       const batchSize = 100;
+      let queuedCount = 0;
       for (let i = 0; i < dates.length; i += batchSize) {
         const chunk = dates
           .slice(i, i + batchSize)
           .map((date) => createHaccpRecord(date, signature, company, { temperatures }));
-        await saveRecords(chunk);
+        const result = await saveRecords(chunk);
+        if (result.queued) queuedCount += chunk.length;
 
         const done = Math.min(i + batchSize, totalDates);
         setProgress((done / totalDates) * 100);
       }
 
-      toast.success(`${totalDates} registri generati con successo!`);
+      if (queuedCount > 0) {
+        toast.success(`${totalDates} registri salvati sul dispositivo`, {
+          description: 'Nessuna connessione: la sincronizzazione avverrà automaticamente appena torna online.',
+        });
+      } else {
+        toast.success(`${totalDates} registri generati con successo!`);
+      }
       onGenerationComplete();
     } catch (error) {
       console.error('Errore durante la generazione:', error);

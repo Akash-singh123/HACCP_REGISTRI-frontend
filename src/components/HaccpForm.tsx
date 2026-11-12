@@ -179,8 +179,14 @@ export const HaccpForm: React.FC<HaccpFormProps> = ({ company, onRecordSaved }) 
 
     setIsSaving(true);
     try {
-      await saveRecord(record);
-      toast.success('Registro salvato con successo');
+      const result = await saveRecord(record);
+      if (result.queued) {
+        toast.success('Registro salvato sul dispositivo', {
+          description: 'Nessuna connessione: sarà sincronizzato automaticamente appena torna online.',
+        });
+      } else {
+        toast.success('Registro salvato con successo');
+      }
       onRecordSaved();
     } catch (e) {
       console.error(e);
