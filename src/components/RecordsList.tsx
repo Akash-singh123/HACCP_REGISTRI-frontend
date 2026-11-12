@@ -5,7 +5,7 @@ import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useConfirm } from '@/components/ConfirmDialog';
 import { Download, Calendar, FileText, Archive, Thermometer, Droplets, Trash2, Truck, ChefHat } from 'lucide-react';
-import { getRecords, getRecordsByMonth, generateMonthlyPDF, generateMonthlySanificationPDF, generateZipArchive, deleteAllRecords, deleteRecordsByMonth } from '@/lib/haccpUtils';
+import { getRecords, generateMonthlyPDF, generateMonthlySanificationPDF, generateZipArchive, deleteAllRecords, deleteRecordsByMonth } from '@/lib/haccpUtils';
 import { HaccpRecord, CompanyInfo } from '@/types/haccp';
 import { DOC_FOLDERS, readTextFile, saveBlob } from '@/lib/docs';
 import { useIncomingFoodsStore } from '@/store/incomingFoodsStore';
@@ -145,29 +145,31 @@ function RecordsList({ company, refreshTrigger = 0 }: RecordsListProps) {
     });
   };
 
-  const downloadMonthlyTemperaturePDF = async (year: number, month: number) => {
+  const downloadMonthlyTemperaturePDF = async (year: number, month: number, monthRecords: HaccpRecord[]) => {
     try {
-      const monthRecords = await getRecordsByMonth(year, month);
       const pdf = await generateMonthlyPDF(monthRecords, company, year, month);
       const monthName = new Date(year, month - 1).toLocaleDateString('it-IT', { month: 'long', year: 'numeric' });
       saveBlob(pdf.output('blob'), `HACCP_Temperature_${monthName.replace(/\s+/g, '_')}.pdf`);
       toast.success('Registro Temperature mensile scaricato');
     } catch (e) {
       console.error(e);
-      toast.error('Errore nel download del Registro Temperature mensile');
+      toast.error('Errore nel download del Registro Temperature mensile', {
+        description: e instanceof Error ? e.message : undefined,
+      });
     }
   };
 
-  const downloadMonthlySanificationPDF = async (year: number, month: number) => {
+  const downloadMonthlySanificationPDF = async (year: number, month: number, monthRecords: HaccpRecord[]) => {
     try {
-      const monthRecords = await getRecordsByMonth(year, month);
       const pdf = await generateMonthlySanificationPDF(monthRecords, company, year, month);
       const monthName = new Date(year, month - 1).toLocaleDateString('it-IT', { month: 'long', year: 'numeric' });
       saveBlob(pdf.output('blob'), `HACCP_Sanificazione_${monthName.replace(/\s+/g, '_')}.pdf`);
       toast.success('Registro Sanificazione mensile scaricato');
     } catch (e) {
       console.error(e);
-      toast.error('Errore nel download del Registro Sanificazione mensile');
+      toast.error('Errore nel download del Registro Sanificazione mensile', {
+        description: e instanceof Error ? e.message : undefined,
+      });
     }
   };
 
@@ -342,7 +344,7 @@ function RecordsList({ company, refreshTrigger = 0 }: RecordsListProps) {
                       <Button
                         variant="outline"
                         size="sm"
-                        onClick={() => downloadMonthlyTemperaturePDF(year, month)}
+                        onClick={() => downloadMonthlyTemperaturePDF(year, month, monthRecords)}
                       >
                         <Thermometer className="h-4 w-4" />
                         Temperature
@@ -350,7 +352,7 @@ function RecordsList({ company, refreshTrigger = 0 }: RecordsListProps) {
                       <Button
                         variant="outline"
                         size="sm"
-                        onClick={() => downloadMonthlySanificationPDF(year, month)}
+                        onClick={() => downloadMonthlySanificationPDF(year, month, monthRecords)}
                       >
                         <Droplets className="h-4 w-4" />
                         Sanificazione
