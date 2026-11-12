@@ -54,19 +54,21 @@ interface NavItem {
   short: string;
   description: string;
   icon: LucideIcon;
+  /** Identità colore della categoria (due stop HSL per gradiente e tinta). */
+  accent: { from: string; to: string };
 }
 
 const NAV_ITEMS: NavItem[] = [
-  { key: 'daily', label: 'Compilazione Giornaliera', short: 'Compila', description: 'Annota temperatura e sanificazione di oggi.', icon: ClipboardList },
-  { key: 'archive', label: 'Archivio e Consultazione', short: 'Archivio', description: 'Consulta e scarica i registri per mese e semestre.', icon: Archive },
-  { key: 'ingresso', label: 'Alimenti in Ingresso', short: 'Ingresso', description: 'Registra gli alimenti con lotto, fornitore e scadenza.', icon: PackagePlus },
-  { key: 'semilavorati', label: 'Prodotti Semilavorati', short: 'Semilavorati', description: 'Gestisci prodotti, categorie e registra i lotti di produzione.', icon: ChefHat },
-  { key: 'allergeni', label: 'Tabella Allergeni', short: 'Allergeni', description: 'Tabella allergeni per prodotto, pronta da stampare.', icon: ShieldAlert },
-  { key: 'infestanti', label: 'Controllo Infestanti', short: 'Infestanti', description: 'Piano di monitoraggio, postazioni e interventi di disinfestazione.', icon: Bug },
-  { key: 'cloud', label: 'Archivio Documenti', short: 'Documenti', description: 'Tutti i documenti PDF archiviati nel cloud.', icon: FolderOpen },
-  { key: 'firma-osa', label: 'Firma OSA', short: 'Firma OSA', description: "Apponi la firma dell'operatore OSA.", icon: Signature },
-  { key: 'stampanti', label: 'Stampanti ed Etichette', short: 'Stampanti', description: 'Collega le stampanti e configura i formati delle etichette.', icon: Printer },
-  { key: 'abbonamento', label: 'Abbonamento', short: 'Piano', description: 'Stato del piano e gestione del pagamento.', icon: CreditCard },
+  { key: 'daily', label: 'Compilazione Giornaliera', short: 'Compila', description: 'Annota temperatura e sanificazione di oggi.', icon: ClipboardList, accent: { from: '190 88% 34%', to: '186 84% 46%' } },
+  { key: 'archive', label: 'Archivio e Consultazione', short: 'Archivio', description: 'Consulta e scarica i registri per mese e semestre.', icon: Archive, accent: { from: '232 68% 52%', to: '244 70% 60%' } },
+  { key: 'ingresso', label: 'Alimenti in Ingresso', short: 'Ingresso', description: 'Registra gli alimenti con lotto, fornitore e scadenza.', icon: PackagePlus, accent: { from: '152 68% 34%', to: '158 62% 46%' } },
+  { key: 'semilavorati', label: 'Prodotti Semilavorati', short: 'Semilavorati', description: 'Gestisci prodotti, categorie e registra i lotti di produzione.', icon: ChefHat, accent: { from: '26 90% 50%', to: '36 92% 56%' } },
+  { key: 'allergeni', label: 'Tabella Allergeni', short: 'Allergeni', description: 'Tabella allergeni per prodotto, pronta da stampare.', icon: ShieldAlert, accent: { from: '348 78% 50%', to: '356 78% 58%' } },
+  { key: 'infestanti', label: 'Controllo Infestanti', short: 'Infestanti', description: 'Piano di monitoraggio, postazioni e interventi di disinfestazione.', icon: Bug, accent: { from: '268 68% 52%', to: '280 66% 60%' } },
+  { key: 'cloud', label: 'Archivio Documenti', short: 'Documenti', description: 'Tutti i documenti PDF archiviati nel cloud.', icon: FolderOpen, accent: { from: '205 85% 44%', to: '195 84% 50%' } },
+  { key: 'firma-osa', label: 'Firma OSA', short: 'Firma OSA', description: "Apponi la firma dell'operatore OSA.", icon: Signature, accent: { from: '166 66% 34%', to: '172 62% 44%' } },
+  { key: 'stampanti', label: 'Stampanti ed Etichette', short: 'Stampanti', description: 'Collega le stampanti e configura i formati delle etichette.', icon: Printer, accent: { from: '220 20% 44%', to: '220 16% 54%' } },
+  { key: 'abbonamento', label: 'Abbonamento', short: 'Piano', description: 'Stato del piano e gestione del pagamento.', icon: CreditCard, accent: { from: '42 88% 46%', to: '34 90% 52%' } },
 ];
 
 const AUTO_ITEM: NavItem = {
@@ -75,6 +77,7 @@ const AUTO_ITEM: NavItem = {
   short: 'Auto',
   description: 'Genera automaticamente i registri del periodo.',
   icon: Zap,
+  accent: { from: '288 72% 52%', to: '300 74% 60%' },
 };
 
 export default function HaccpDashboard() {
@@ -360,7 +363,11 @@ export default function HaccpDashboard() {
     <div className="app-shell">
       {/* ── Header ───────────────────────────────────────────── */}
       <header className="sticky top-0 z-40 border-b border-border/60 bg-background/85 shadow-[0_1px_2px_rgba(15,23,42,0.04)] backdrop-blur-xl">
-        <div aria-hidden className="h-0.5 w-full bg-gradient-to-r from-primary via-brand to-primary/30" />
+        <div
+          aria-hidden
+          className="h-0.5 w-full transition-[background-image] duration-500"
+          style={{ backgroundImage: `linear-gradient(90deg, hsl(${activeItem.accent.from}), hsl(${activeItem.accent.to}), hsl(${activeItem.accent.from} / 0.25))` }}
+        />
         <div className="mx-auto flex h-16 max-w-7xl items-center gap-3 px-4 sm:px-6 lg:px-8">
           <div className="flex min-w-0 items-center gap-3">
             <img src="/brand/alimex_logo.svg" alt="Alimex" className="h-12 w-auto shrink-0" />
@@ -415,12 +422,11 @@ export default function HaccpDashboard() {
                   aria-current={active ? 'page' : undefined}
                   className={[
                     'inline-flex shrink-0 items-center gap-2 whitespace-nowrap rounded-full px-4 py-2.5 text-sm font-medium transition-all duration-200',
-                    active
-                      ? 'bg-gradient-to-r from-primary to-brand text-primary-foreground shadow-glow'
-                      : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground',
+                    active ? 'text-white shadow-glow' : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground',
                   ].join(' ')}
+                  style={active ? { backgroundImage: `linear-gradient(120deg, hsl(${item.accent.from}), hsl(${item.accent.to}))` } : undefined}
                 >
-                  <item.icon className="h-4 w-4" />
+                  <item.icon className="h-4 w-4" style={active ? undefined : { color: `hsl(${item.accent.from})` }} />
                   {item.short}
                 </button>
               );
@@ -429,12 +435,21 @@ export default function HaccpDashboard() {
         </nav>
       </header>
 
-      <main className="mx-auto w-full max-w-7xl px-4 pb-44 pt-6 sm:px-6 lg:px-8 lg:pb-10">
+      <main className="mx-auto w-full max-w-7xl px-4 pb-36 pt-6 sm:px-6 lg:px-8 lg:pb-10">
         {/* Intestazione sezione */}
-        <div className="mb-6 flex flex-wrap items-center justify-between gap-4">
-          <div className="flex items-center gap-3">
-            <span className="icon-tile h-11 w-11 shrink-0">
-              <activeItem.icon className="h-5 w-5" />
+        <div
+          className="mb-6 flex flex-wrap items-center justify-between gap-4 rounded-2xl border p-4 shadow-card sm:p-5"
+          style={{
+            borderColor: `hsl(${activeItem.accent.from} / 0.22)`,
+            backgroundImage: `linear-gradient(120deg, hsl(${activeItem.accent.from} / 0.12), hsl(${activeItem.accent.to} / 0.06) 55%, transparent)`,
+          }}
+        >
+          <div className="flex items-center gap-3.5">
+            <span
+              className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl text-white shadow-elevated"
+              style={{ backgroundImage: `linear-gradient(140deg, hsl(${activeItem.accent.from}), hsl(${activeItem.accent.to}))` }}
+            >
+              <activeItem.icon className="h-6 w-6" />
             </span>
             <div>
               <h2 className="text-xl font-bold tracking-tight sm:text-2xl">{activeItem.label}</h2>
@@ -575,11 +590,11 @@ export default function HaccpDashboard() {
       <nav className="fixed inset-x-0 bottom-0 z-40 border-t border-border/60 bg-background/95 pb-[env(safe-area-inset-bottom)] shadow-[0_-8px_30px_-12px_rgba(15,23,42,0.18)] backdrop-blur-xl lg:hidden">
         <div className="relative">
           {/* Sfumature ai lati: indicano che ci sono altre voci oltre lo schermo */}
-          <div aria-hidden className="pointer-events-none absolute inset-y-0 left-0 z-10 w-8 bg-gradient-to-r from-background to-transparent" />
-          <div aria-hidden className="pointer-events-none absolute inset-y-0 right-0 z-10 w-8 bg-gradient-to-l from-background to-transparent" />
+          <div aria-hidden className="pointer-events-none absolute inset-y-0 left-0 z-10 w-6 bg-gradient-to-r from-background to-transparent" />
+          <div aria-hidden className="pointer-events-none absolute inset-y-0 right-0 z-10 w-6 bg-gradient-to-l from-background to-transparent" />
           <div
             ref={mobileNavRef}
-            className="flex snap-x items-stretch gap-2 overflow-x-auto overscroll-x-contain scroll-px-3 px-3 py-2.5 [scrollbar-width:none] [touch-action:pan-x] [&::-webkit-scrollbar]:hidden"
+            className="flex snap-x items-stretch gap-1.5 overflow-x-auto overscroll-x-contain scroll-px-3 px-3 py-2 [scrollbar-width:none] [touch-action:pan-x] [&::-webkit-scrollbar]:hidden"
           >
             {navItems.map((item) => {
               const active = activeTab === item.key;
@@ -592,23 +607,25 @@ export default function HaccpDashboard() {
                   aria-label={item.label}
                   aria-current={active ? 'page' : undefined}
                   className={cn(
-                    'group flex min-h-[96px] min-w-[112px] shrink-0 snap-center flex-col items-center justify-center gap-2 rounded-2xl px-3 py-3 text-[13px] font-semibold leading-none transition-all duration-200',
-                    active
-                      ? 'bg-primary/10 text-primary'
-                      : 'text-muted-foreground hover:bg-accent/60 hover:text-foreground',
+                    'group flex min-h-[78px] min-w-[90px] shrink-0 snap-center flex-col items-center justify-center gap-1.5 rounded-2xl px-2.5 py-2 text-[12px] font-semibold leading-none transition-all duration-200',
+                    !active && 'text-muted-foreground hover:bg-accent/60 hover:text-foreground',
                   )}
+                  style={active ? { backgroundColor: `hsl(${item.accent.from} / 0.12)`, color: `hsl(${item.accent.from})` } : undefined}
                 >
                   <span
                     className={cn(
-                      'grid h-14 w-14 place-items-center rounded-2xl transition-all duration-200',
-                      active
-                        ? 'bg-gradient-to-br from-primary to-brand text-primary-foreground shadow-glow'
-                        : 'bg-muted/70 group-hover:bg-muted',
+                      'grid h-10 w-10 place-items-center rounded-2xl transition-all duration-200',
+                      active ? 'text-white shadow-glow' : 'group-hover:scale-105',
                     )}
+                    style={
+                      active
+                        ? { backgroundImage: `linear-gradient(140deg, hsl(${item.accent.from}), hsl(${item.accent.to}))` }
+                        : { backgroundColor: `hsl(${item.accent.from} / 0.13)`, color: `hsl(${item.accent.from})` }
+                    }
                   >
-                    <item.icon className="h-7 w-7" />
+                    <item.icon className="h-[22px] w-[22px]" />
                   </span>
-                  <span className="max-w-[96px] truncate">{item.short}</span>
+                  <span className="max-w-[78px] truncate">{item.short}</span>
                 </button>
               );
             })}
