@@ -9,7 +9,7 @@
  * verso l'API (Supabase) non vengono mai messe in cache.
  */
 
-const CACHE = 'haccp-shell-v2';
+const CACHE = 'haccp-shell-v3';
 const OFFLINE_URL = '/index.html';
 const SHELL = ['/', OFFLINE_URL, '/manifest.webmanifest', '/brand/icon-192.png'];
 

@@ -97,6 +97,22 @@ export async function promptInstall(): Promise<boolean> {
 export function registerServiceWorker(onUpdateAvailable?: () => void): void {
   if (typeof navigator === 'undefined' || !('serviceWorker' in navigator)) return;
 
+  // In sviluppo il service worker NON va registrato: la sua cache "cache-first"
+  // conserva anche i moduli serviti da Vite (es. /src/lib/haccpUtils.ts) e
+  // continuerebbe a servirne versioni ormai obsolete, mascherando ogni modifica
+  // al codice. Se una registrazione è rimasta attiva, la rimuoviamo (con la sua
+  // cache) così il browser torna a leggere sempre il codice aggiornato.
+  if (!import.meta.env.PROD) {
+    void navigator.serviceWorker.getRegistrations().then(async (regs) => {
+      await Promise.all(regs.map((reg) => reg.unregister().catch(() => false)));
+      if (typeof caches !== 'undefined') {
+        const keys = await caches.keys();
+        await Promise.all(keys.map((key) => caches.delete(key).catch(() => false)));
+      }
+    });
+    return;
+  }
+
   const register = () => {
     navigator.serviceWorker
       .register('/sw.js')
