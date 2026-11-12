@@ -1,21 +1,21 @@
 import { HaccpRecord, CompanyInfo, Equipment, EquipmentKind } from '@/types/haccp';
 // jspdf e jszip pesano centinaia di KB e servono solo quando si genera un PDF o
-// uno ZIP: vengono caricati on demand (code-splitting) invece che all'avvio.
+// uno ZIP: vengono caricati on demand. L'import dinamico però è RELATIVO
+// (./pdfLibs): uno specificatore "nudo" come import('jspdf') non viene risolto
+// da tutti gli ambienti di esecuzione (errore "Failed to resolve module
+// specifier 'jspdf'"). La libreria resta quindi fuori dal bundle iniziale.
 import type { jsPDF } from 'jspdf';
 import { getOsaSignature, addSignatureToPdf } from './osaSignature';
 import { activeData, ApiError, getActiveCompany, type RecordUpsertPayload } from './api';
 import { enqueueRecord, getPendingRecords, removePendingRecord, clearPendingRecords, type PendingRecord } from './offlineQueue';
 
-type JsPdfConstructor = typeof import('jspdf').default;
-let jsPdfConstructor: JsPdfConstructor | null = null;
+type PdfLibs = typeof import('./pdfLibs');
+let pdfLibsPromise: Promise<PdfLibs> | null = null;
 
-/** Carica jspdf una sola volta, al primo PDF realmente richiesto. */
-async function getJsPDF(): Promise<JsPdfConstructor> {
-  if (!jsPdfConstructor) {
-    const mod = await import('jspdf');
-    jsPdfConstructor = mod.default;
-  }
-  return jsPdfConstructor;
+/** Carica jspdf e jszip una sola volta, alla prima generazione di PDF o ZIP. */
+async function getPdfLibs(): Promise<PdfLibs> {
+  if (!pdfLibsPromise) pdfLibsPromise = import('./pdfLibs');
+  return pdfLibsPromise;
 }
 
 /** Range HACCP di riferimento per tipologia di attrezzatura. */
@@ -269,7 +269,7 @@ export const generatePDF = async (
   company: CompanyInfo,
   equipment?: Equipment[]
 ): Promise<jsPDF> => {
-  const JsPDF = await getJsPDF();
+  const { jsPDF: JsPDF } = await getPdfLibs();
   const pdf = new JsPDF('landscape', 'mm', 'a4');
   const date = new Date(record.date);
   const monthNames = [
@@ -371,7 +371,7 @@ export const generatePDF = async (
 
 // PDF Generation - Single Day Sanification
 export const generateSanificationPDF = async (record: HaccpRecord, company: CompanyInfo): Promise<jsPDF> => {
-  const JsPDF = await getJsPDF();
+  const { jsPDF: JsPDF } = await getPdfLibs();
   const pdf = new JsPDF('landscape', 'mm', 'a4');
   const date = new Date(record.date);
   const monthNames = [
@@ -479,7 +479,7 @@ export const generateMonthlyPDF = async (
   month: number,
   equipment?: Equipment[]
 ): Promise<jsPDF> => {
-  const JsPDF = await getJsPDF();
+  const { jsPDF: JsPDF } = await getPdfLibs();
   const pdf = new JsPDF('landscape', 'mm', 'a4');
   const monthNames = [
     'Gennaio', 'Febbraio', 'Marzo', 'Aprile', 'Maggio', 'Giugno',
@@ -642,7 +642,7 @@ export const generateMonthlyPDF = async (
 
 // PDF Generation - Monthly Sanification Report
 export const generateMonthlySanificationPDF = async (records: HaccpRecord[], company: CompanyInfo, year: number, month: number): Promise<jsPDF> => {
-  const JsPDF = await getJsPDF();
+  const { jsPDF: JsPDF } = await getPdfLibs();
   const pdf = new JsPDF('landscape', 'mm', 'a4');
   const monthNames = [
     'Gennaio', 'Febbraio', 'Marzo', 'Aprile', 'Maggio', 'Giugno',
@@ -811,8 +811,8 @@ export const generateMonthlySanificationPDF = async (records: HaccpRecord[], com
 };
 
 export const generateZipArchive = async (records: HaccpRecord[], company: CompanyInfo): Promise<Blob> => {
-  const { default: JSZip } = await import('jszip');
-  const zip = new JSZip();
+  const { JSZip: Zip } = await getPdfLibs();
+  const zip = new Zip();
   const equipment = await getEquipment();
   
   // Group records by month
