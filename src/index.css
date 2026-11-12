@@ -158,6 +158,32 @@
   ::selection {
     background-color: hsl(var(--primary) / 0.18);
   }
+
+  /* Campi data/ora nativi: l'input shadcn usa "display: flex", che nei browser
+     WebKit/Blink fa stirare i segmenti della data fino ai bordi. Il tipo di
+     campo viene gestito nel componente Input (classe "block" al posto di "flex"). */
+
+  /* iOS allinea il valore al centro in modo anomalo: lo riportiamo a sinistra. */
+  input[type='date']::-webkit-date-and-time-value,
+  input[type='time']::-webkit-date-and-time-value {
+    text-align: left;
+  }
+
+  input[type='date']::-webkit-datetime-edit,
+  input[type='time']::-webkit-datetime-edit {
+    padding: 0;
+  }
+
+  /* Icona calendario: spaziata dal bordo e con feedback al passaggio. */
+  input[type='date']::-webkit-calendar-picker-indicator {
+    margin-left: 0.5rem;
+    cursor: pointer;
+    opacity: 0.6;
+  }
+
+  input[type='date']::-webkit-calendar-picker-indicator:hover {
+    opacity: 1;
+  }
 }
 
 @layer components {

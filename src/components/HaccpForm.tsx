@@ -231,7 +231,7 @@ export const HaccpForm: React.FC<HaccpFormProps> = ({ company, onRecordSaved }) 
 
         <CardContent className="space-y-4 pt-5">
           <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-            <div className="space-y-1.5 sm:w-64">
+            <div className="w-full min-w-0 space-y-1.5 sm:w-64">
               <Label htmlFor="date" className="field-label">Data del registro</Label>
               <Input
                 id="date"
