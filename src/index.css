@@ -22,7 +22,7 @@
     --secondary-foreground: 195 75% 20%;
 
     --muted: 200 30% 95.5%;
-    --muted-foreground: 205 20% 46%;
+    --muted-foreground: 205 25% 42%;
 
     --accent: 188 65% 93%;
     --accent-foreground: 190 85% 22%;
@@ -40,8 +40,8 @@
     --info: 205 88% 46%;
     --info-foreground: 0 0% 100%;
 
-    --border: 200 26% 89%;
-    --input: 200 26% 89%;
+    --border: 200 24% 87%;
+    --input: 200 24% 87%;
     --ring: 190 90% 32%;
 
     --radius: 0.75rem;
@@ -73,7 +73,7 @@
     --secondary-foreground: 195 30% 96%;
 
     --muted: 205 30% 17%;
-    --muted-foreground: 200 18% 65%;
+    --muted-foreground: 200 18% 70%;
 
     --accent: 200 40% 20%;
     --accent-foreground: 187 70% 80%;
@@ -90,8 +90,8 @@
     --info: 205 80% 55%;
     --info-foreground: 0 0% 100%;
 
-    --border: 205 28% 20%;
-    --input: 205 28% 20%;
+    --border: 205 28% 24%;
+    --input: 205 28% 24%;
     --ring: 187 80% 45%;
 
     --sidebar-background: 205 45% 9%;
@@ -161,17 +161,39 @@
 }
 
 @layer components {
-  /* Sfondo applicazione: gradiente soft con accento brand */
+  /* Sfondo applicazione: gradiente soft a più strati con accento brand */
   .app-shell {
     @apply min-h-screen bg-background;
     background-image:
-      radial-gradient(1200px 600px at 100% -10%, hsl(var(--primary) / 0.07), transparent 60%),
-      radial-gradient(900px 500px at -10% 0%, hsl(187 90% 45% / 0.06), transparent 55%);
+      radial-gradient(1100px 560px at 100% -12%, hsl(var(--primary) / 0.10), transparent 62%),
+      radial-gradient(900px 520px at -12% -4%, hsl(187 90% 45% / 0.09), transparent 58%),
+      linear-gradient(180deg, hsl(var(--background)) 0%, hsl(200 42% 97%) 100%);
+  }
+
+  .dark .app-shell {
+    background-image:
+      radial-gradient(1100px 560px at 100% -12%, hsl(var(--primary) / 0.16), transparent 62%),
+      radial-gradient(900px 520px at -12% -4%, hsl(187 90% 45% / 0.12), transparent 58%),
+      linear-gradient(180deg, hsl(var(--background)) 0%, hsl(205 45% 6%) 100%);
   }
 
   /* Card con bordo soft ed elevazione discreta */
   .surface {
-    @apply rounded-xl border border-border/70 bg-card shadow-card;
+    @apply rounded-2xl border border-border/70 bg-card shadow-card;
+  }
+
+  /* Tessera icona con gradiente brand */
+  .icon-tile {
+    @apply grid place-items-center rounded-2xl text-white shadow-glow;
+    background-image: linear-gradient(140deg, hsl(var(--primary)), hsl(187 90% 42%));
+  }
+
+  /* Testo con gradiente brand */
+  .brand-gradient-text {
+    background-image: linear-gradient(100deg, hsl(var(--primary)), hsl(187 88% 42%));
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
   }
 
   /* Micro-interazione: sollevamento al hover */

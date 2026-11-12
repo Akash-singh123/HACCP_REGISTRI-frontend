@@ -359,7 +359,8 @@ export default function HaccpDashboard() {
   return (
     <div className="app-shell">
       {/* ── Header ───────────────────────────────────────────── */}
-      <header className="sticky top-0 z-40 border-b border-border/60 bg-background/85 backdrop-blur-xl">
+      <header className="sticky top-0 z-40 border-b border-border/60 bg-background/85 shadow-[0_1px_2px_rgba(15,23,42,0.04)] backdrop-blur-xl">
+        <div aria-hidden className="h-0.5 w-full bg-gradient-to-r from-primary via-brand to-primary/30" />
         <div className="mx-auto flex h-16 max-w-7xl items-center gap-3 px-4 sm:px-6 lg:px-8">
           <div className="flex min-w-0 items-center gap-3">
             <img src="/brand/alimex_logo.svg" alt="Alimex" className="h-12 w-auto shrink-0" />
@@ -369,7 +370,7 @@ export default function HaccpDashboard() {
           </div>
 
           <div className="ml-auto flex items-center gap-1.5 sm:gap-2">
-            <div className="hidden items-center gap-2.5 rounded-full border border-border/70 bg-card py-1.5 pl-1.5 pr-3.5 md:flex">
+            <div className="hidden items-center gap-2.5 rounded-full border border-border/70 bg-card py-1.5 pl-1.5 pr-3.5 shadow-card md:flex">
               {logoUrl ? (
                 <img src={logoUrl} alt="Logo azienda" className="h-7 w-7 rounded-full object-contain" />
               ) : (
@@ -403,7 +404,7 @@ export default function HaccpDashboard() {
 
         {/* Navigazione desktop */}
         <nav className="hidden border-t border-border/60 lg:block">
-          <div className="mx-auto flex max-w-7xl items-center gap-1 overflow-x-auto px-4 py-2 sm:px-6 lg:px-8">
+          <div className="mx-auto flex max-w-7xl flex-wrap items-center gap-1.5 px-4 py-2.5 sm:px-6 lg:px-8">
             {navItems.map((item) => {
               const active = activeTab === item.key;
               return (
@@ -413,9 +414,9 @@ export default function HaccpDashboard() {
                   onClick={() => goTo(item.key)}
                   aria-current={active ? 'page' : undefined}
                   className={[
-                    'inline-flex shrink-0 items-center gap-2 rounded-full px-3.5 py-2 text-sm font-medium transition-all duration-200',
+                    'inline-flex shrink-0 items-center gap-2 whitespace-nowrap rounded-full px-4 py-2.5 text-sm font-medium transition-all duration-200',
                     active
-                      ? 'bg-primary text-primary-foreground shadow-sm'
+                      ? 'bg-gradient-to-r from-primary to-brand text-primary-foreground shadow-glow'
                       : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground',
                   ].join(' ')}
                 >
@@ -428,12 +429,17 @@ export default function HaccpDashboard() {
         </nav>
       </header>
 
-      <main className="mx-auto w-full max-w-7xl px-4 pb-28 pt-6 sm:px-6 lg:px-8 lg:pb-10">
+      <main className="mx-auto w-full max-w-7xl px-4 pb-44 pt-6 sm:px-6 lg:px-8 lg:pb-10">
         {/* Intestazione sezione */}
-        <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <h2 className="text-xl font-bold tracking-tight sm:text-2xl">{activeItem.label}</h2>
-            <p className="mt-0.5 text-sm text-muted-foreground">{activeItem.description}</p>
+        <div className="mb-6 flex flex-wrap items-center justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <span className="icon-tile h-11 w-11 shrink-0">
+              <activeItem.icon className="h-5 w-5" />
+            </span>
+            <div>
+              <h2 className="text-xl font-bold tracking-tight sm:text-2xl">{activeItem.label}</h2>
+              <p className="mt-0.5 text-sm text-muted-foreground">{activeItem.description}</p>
+            </div>
           </div>
           {autoUnlocked && (
             <Badge variant="secondary" className="gap-1.5">
@@ -536,17 +542,20 @@ export default function HaccpDashboard() {
         {/* Statistiche: su mobile restano nella sezione iniziale per non rubare spazio alle altre */}
         <div className={cn('mb-8 grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4', activeTab !== 'daily' && 'hidden lg:grid')}>
           {statCards.map((s) => (
-            <Card key={s.label} className="hover-lift border-border/70 shadow-card">
+            <Card
+              key={s.label}
+              className="rounded-2xl border-border/70 shadow-card transition-all duration-300 hover:-translate-y-1 hover:shadow-elevated"
+            >
               <CardContent className="flex items-center justify-between gap-3 p-4 sm:p-5">
                 <div className="min-w-0">
                   <p className="truncate text-xs font-medium text-muted-foreground sm:text-sm">{s.label}</p>
                   {statsLoading ? (
-                    <Skeleton className="mt-2 h-7 w-14" />
+                    <Skeleton className="mt-2 h-8 w-16" />
                   ) : (
-                    <p className={`mt-1 truncate text-xl font-bold sm:text-2xl ${s.tone}`}>{s.value}</p>
+                    <p className={`mt-1 truncate text-2xl font-bold tracking-tight sm:text-3xl ${s.tone}`}>{s.value}</p>
                   )}
                 </div>
-                <span className={`grid h-10 w-10 shrink-0 place-items-center rounded-xl ${s.tile} sm:h-11 sm:w-11`}>
+                <span className={`grid h-11 w-11 shrink-0 place-items-center rounded-2xl ${s.tile} sm:h-12 sm:w-12`}>
                   <s.icon className="h-5 w-5" />
                 </span>
               </CardContent>
@@ -563,33 +572,47 @@ export default function HaccpDashboard() {
       </main>
 
       {/* ── Navigazione mobile ───────────────────────────────── */}
-      <nav className="fixed inset-x-0 bottom-0 z-40 border-t border-border/60 bg-background/95 pb-[env(safe-area-inset-bottom)] backdrop-blur-xl lg:hidden">
-        <div
-          ref={mobileNavRef}
-          className="flex items-stretch gap-1 overflow-x-auto px-2 py-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
-        >
-          {navItems.map((item) => {
-            const active = activeTab === item.key;
-            return (
-              <button
-                key={item.key}
-                ref={active ? activeNavRef : undefined}
-                type="button"
-                onClick={() => goTo(item.key)}
-                aria-label={item.label}
-                aria-current={active ? 'page' : undefined}
-                className={[
-                  'relative flex min-h-[58px] min-w-[72px] shrink-0 flex-col items-center justify-center gap-1 rounded-xl px-2 py-1.5 text-[11px] font-medium leading-none transition-colors active:scale-95',
-                  active ? 'text-primary' : 'text-muted-foreground',
-                ].join(' ')}
-              >
-                <span className={['grid h-8 w-11 place-items-center rounded-full transition-colors', active ? 'bg-primary/10' : ''].join(' ')}>
-                  <item.icon className="h-5 w-5" />
-                </span>
-                <span className="max-w-[64px] truncate">{item.short}</span>
-              </button>
-            );
-          })}
+      <nav className="fixed inset-x-0 bottom-0 z-40 border-t border-border/60 bg-background/95 pb-[env(safe-area-inset-bottom)] shadow-[0_-8px_30px_-12px_rgba(15,23,42,0.18)] backdrop-blur-xl lg:hidden">
+        <div className="relative">
+          {/* Sfumature ai lati: indicano che ci sono altre voci oltre lo schermo */}
+          <div aria-hidden className="pointer-events-none absolute inset-y-0 left-0 z-10 w-8 bg-gradient-to-r from-background to-transparent" />
+          <div aria-hidden className="pointer-events-none absolute inset-y-0 right-0 z-10 w-8 bg-gradient-to-l from-background to-transparent" />
+          <div
+            ref={mobileNavRef}
+            className="flex snap-x items-stretch gap-2 overflow-x-auto overscroll-x-contain scroll-px-3 px-3 py-2.5 [scrollbar-width:none] [touch-action:pan-x] [&::-webkit-scrollbar]:hidden"
+          >
+            {navItems.map((item) => {
+              const active = activeTab === item.key;
+              return (
+                <button
+                  key={item.key}
+                  ref={active ? activeNavRef : undefined}
+                  type="button"
+                  onClick={() => goTo(item.key)}
+                  aria-label={item.label}
+                  aria-current={active ? 'page' : undefined}
+                  className={cn(
+                    'group flex min-h-[96px] min-w-[112px] shrink-0 snap-center flex-col items-center justify-center gap-2 rounded-2xl px-3 py-3 text-[13px] font-semibold leading-none transition-all duration-200',
+                    active
+                      ? 'bg-primary/10 text-primary'
+                      : 'text-muted-foreground hover:bg-accent/60 hover:text-foreground',
+                  )}
+                >
+                  <span
+                    className={cn(
+                      'grid h-14 w-14 place-items-center rounded-2xl transition-all duration-200',
+                      active
+                        ? 'bg-gradient-to-br from-primary to-brand text-primary-foreground shadow-glow'
+                        : 'bg-muted/70 group-hover:bg-muted',
+                    )}
+                  >
+                    <item.icon className="h-7 w-7" />
+                  </span>
+                  <span className="max-w-[96px] truncate">{item.short}</span>
+                </button>
+              );
+            })}
+          </div>
         </div>
       </nav>
     </div>

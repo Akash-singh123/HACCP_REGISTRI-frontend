@@ -68,9 +68,11 @@ function SectionHeading({
   return (
     <div className={cn('max-w-2xl', align === 'center' ? 'mx-auto text-center' : 'text-left')}>
       {eyebrow && (
-        <span className="text-xs font-semibold uppercase tracking-widest text-primary">{eyebrow}</span>
+        <span className="inline-flex items-center rounded-full border border-primary/20 bg-primary/5 px-3 py-1 text-[11px] font-semibold uppercase tracking-widest text-primary">
+          {eyebrow}
+        </span>
       )}
-      <h2 className="mt-2 text-2xl font-bold tracking-tight sm:text-3xl">{title}</h2>
+      <h2 className="mt-3 text-2xl font-bold tracking-tight sm:text-3xl lg:text-[2.1rem]">{title}</h2>
       {description && <p className="mt-3 text-sm text-muted-foreground sm:text-base">{description}</p>}
     </div>
   );
@@ -238,7 +240,8 @@ export default function Landing() {
   return (
     <div className="app-shell">
       {/* ------------------------------------------------------------ HEADER */}
-      <header className="sticky top-0 z-40 border-b border-border/60 bg-background/80 backdrop-blur supports-[backdrop-filter]:bg-background/70">
+      <header className="sticky top-0 z-40 border-b border-border/60 bg-background/85 backdrop-blur-xl">
+        <div aria-hidden className="h-0.5 w-full bg-gradient-to-r from-primary via-brand to-primary/30" />
         <div className="mx-auto flex h-16 w-full max-w-6xl items-center justify-between gap-4 px-4">
           <Link to="/" className="flex items-center gap-2.5">
             <img src="/brand/alimex_logo.svg" alt={BRAND} className="h-11 w-auto" />
@@ -289,9 +292,7 @@ export default function Landing() {
 
             <h1 className="mt-5 text-3xl font-bold leading-[1.1] tracking-tight sm:text-4xl lg:text-5xl">
               La conformità HACCP,{' '}
-              <span className="bg-gradient-to-r from-primary to-[hsl(187_85%_42%)] bg-clip-text text-transparent">
-                senza più carta e fogli Excel
-              </span>
+              <span className="brand-gradient-text">senza più carta e fogli Excel</span>
               .
             </h1>
 
@@ -404,10 +405,13 @@ export default function Landing() {
 
           <div className="mt-12 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
             {FEATURES.map(({ icon: Icon, title, text }) => (
-              <Card key={title} className="surface hover-lift h-full">
+              <Card
+                key={title}
+                className="h-full rounded-2xl border-border/70 shadow-card transition-all duration-300 hover:-translate-y-1 hover:shadow-elevated"
+              >
                 <CardContent className="flex h-full flex-col gap-3 p-5">
-                  <span className="grid h-11 w-11 place-items-center rounded-xl bg-primary/10 text-primary">
-                    <Icon className="h-5 w-5" />
+                  <span className="icon-tile h-12 w-12">
+                    <Icon className="h-6 w-6" />
                   </span>
                   <h3 className="text-sm font-semibold">{title}</h3>
                   <p className="text-sm text-muted-foreground">{text}</p>
@@ -476,13 +480,16 @@ export default function Landing() {
 
           <div className="mt-12 grid gap-5 md:grid-cols-3">
             {STEPS.map(({ icon: Icon, title, text }, index) => (
-              <Card key={title} className="surface hover-lift h-full">
+              <Card
+                key={title}
+                className="h-full rounded-2xl border-border/70 shadow-card transition-all duration-300 hover:-translate-y-1 hover:shadow-elevated"
+              >
                 <CardContent className="p-6">
                   <div className="flex items-center justify-between">
-                    <span className="grid h-11 w-11 place-items-center rounded-xl bg-primary/10 text-primary">
-                      <Icon className="h-5 w-5" />
+                    <span className="icon-tile h-12 w-12">
+                      <Icon className="h-6 w-6" />
                     </span>
-                    <span className="text-3xl font-bold text-muted-foreground/25">{index + 1}</span>
+                    <span className="text-4xl font-bold text-primary/15">{index + 1}</span>
                   </div>
                   <h3 className="mt-4 text-sm font-semibold">{title}</h3>
                   <p className="mt-1.5 text-sm text-muted-foreground">{text}</p>
@@ -504,10 +511,13 @@ export default function Landing() {
 
           <div className="mt-12 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
             {SECURITY.map(({ icon: Icon, title, text }) => (
-              <Card key={title} className="surface h-full">
+              <Card
+                key={title}
+                className="h-full rounded-2xl border-border/70 shadow-card transition-all duration-300 hover:-translate-y-1 hover:shadow-elevated"
+              >
                 <CardContent className="flex h-full flex-col gap-3 p-5">
-                  <span className="grid h-11 w-11 place-items-center rounded-xl bg-success/10 text-success">
-                    <Icon className="h-5 w-5" />
+                  <span className="grid h-12 w-12 place-items-center rounded-2xl bg-success/10 text-success">
+                    <Icon className="h-6 w-6" />
                   </span>
                   <h3 className="text-sm font-semibold">{title}</h3>
                   <p className="text-sm text-muted-foreground">{text}</p>
@@ -527,13 +537,13 @@ export default function Landing() {
             description="Nessun listino complicato e nessun modulo da comprare a parte. Tutte le funzioni del gestionale in un solo abbonamento."
           />
 
-          <Card className="surface mt-12 overflow-hidden">
-            <div className="border-b border-border/60 bg-gradient-to-br from-primary/5 to-[hsl(187_85%_45%)]/5 p-7 text-center">
+          <Card className="mt-12 overflow-hidden rounded-3xl border-primary/20 shadow-float ring-1 ring-primary/10">
+            <div className="border-b border-border/60 bg-gradient-to-br from-primary/10 via-brand/5 to-transparent p-7 text-center">
               <p className="text-sm font-medium text-muted-foreground">Abbonamento {BRAND}</p>
               {plansLoading ? (
-                <Skeleton className="mx-auto mt-3 h-10 w-40" />
+                <Skeleton className="mx-auto mt-3 h-11 w-44" />
               ) : (
-                <p className="mt-2 text-4xl font-bold tracking-tight">{formatPrice(plans)}</p>
+                <p className="mt-2 text-5xl font-bold tracking-tight">{formatPrice(plans)}</p>
               )}
               <p className="mt-1 text-xs text-muted-foreground">IVA esclusa</p>
               <Badge variant="outline" className="mt-4 border-success/30 bg-success/10 text-success">
@@ -602,7 +612,7 @@ export default function Landing() {
       {/* ------------------------------------------------------------- CTA FINALE */}
       <section className="py-20">
         <div className="mx-auto w-full max-w-6xl px-4">
-          <div className="relative overflow-hidden rounded-2xl border border-primary/20 bg-gradient-to-br from-primary via-primary to-[hsl(187_85%_38%)] p-9 text-center text-primary-foreground shadow-glow sm:p-14">
+          <div className="relative overflow-hidden rounded-3xl border border-primary/20 bg-gradient-to-br from-primary via-primary/90 to-brand p-9 text-center text-primary-foreground shadow-glow sm:p-14">
             <div
               aria-hidden
               className="pointer-events-none absolute inset-0 text-white/10"

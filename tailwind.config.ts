@@ -48,6 +48,10 @@ export default {
           DEFAULT: "hsl(var(--info))",
           foreground: "hsl(var(--info-foreground))",
         },
+        brand: {
+          DEFAULT: "hsl(187 90% 45%)",
+          deep: "hsl(190 92% 28%)",
+        },
         muted: {
           DEFAULT: "hsl(var(--muted))",
           foreground: "hsl(var(--muted-foreground))",
@@ -83,9 +87,10 @@ export default {
         "2xl": "calc(var(--radius) + 10px)",
       },
       boxShadow: {
-        card: "0 1px 2px 0 hsl(205 45% 12% / 0.04), 0 1px 3px 0 hsl(205 45% 12% / 0.06)",
-        elevated: "0 8px 24px -6px hsl(205 45% 12% / 0.14), 0 2px 8px -2px hsl(205 45% 12% / 0.08)",
-        glow: "0 0 0 1px hsl(var(--primary) / 0.18), 0 8px 24px -8px hsl(var(--primary) / 0.35)",
+        card: "0 1px 2px 0 hsl(205 45% 12% / 0.05), 0 2px 6px -1px hsl(205 45% 12% / 0.07)",
+        elevated: "0 12px 32px -10px hsl(205 45% 12% / 0.20), 0 4px 12px -4px hsl(205 45% 12% / 0.10)",
+        float: "0 24px 60px -20px hsl(205 45% 12% / 0.30), 0 10px 26px -14px hsl(205 45% 12% / 0.16)",
+        glow: "0 0 0 1px hsl(var(--primary) / 0.20), 0 16px 44px -12px hsl(var(--primary) / 0.45)",
       },
       keyframes: {
         "accordion-down": {
