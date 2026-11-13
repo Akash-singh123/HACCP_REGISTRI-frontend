@@ -22,6 +22,7 @@ import {
   Clock,
   CreditCard,
   FolderOpen,
+  Gauge,
   Loader2,
   LogOut,
   PackagePlus,
@@ -34,6 +35,7 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 const Semilavorati = lazy(() => import('@/components/Semilavorati'));
+const Cruscotto = lazy(() => import('@/components/Cruscotto'));
 const IncomingFoods = lazy(() => import('@/components/IncomingFoods'));
 const OsaSignature = lazy(() => import('@/components/OsaSignature'));
 const Allergeni = lazy(() => import('@/components/Allergeni'));
@@ -47,7 +49,7 @@ import { startAutoRegisterScheduler } from '@/lib/autoRegisters';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 
-type TabKey = 'daily' | 'auto' | 'archive' | 'ingresso' | 'cloud' | 'semilavorati' | 'firma-osa' | 'allergeni' | 'infestanti' | 'stampanti' | 'abbonamento';
+type TabKey = 'cruscotto' | 'daily' | 'auto' | 'archive' | 'ingresso' | 'cloud' | 'semilavorati' | 'firma-osa' | 'allergeni' | 'infestanti' | 'stampanti' | 'abbonamento';
 
 interface NavItem {
   key: TabKey;
@@ -60,6 +62,7 @@ interface NavItem {
 }
 
 const NAV_ITEMS: NavItem[] = [
+  { key: 'cruscotto', label: 'Cruscotto di Conformità', short: 'Cruscotto', description: "Indice di conformità, trend e non conformità per la gestione e l'ispezione.", icon: Gauge, accent: { from: '221 83% 45%', to: '231 78% 56%' } },
   { key: 'daily', label: 'Compilazione Giornaliera', short: 'Compila', description: 'Annota temperatura e sanificazione di oggi.', icon: ClipboardList, accent: { from: '190 88% 34%', to: '186 84% 46%' } },
   { key: 'archive', label: 'Archivio e Consultazione', short: 'Archivio', description: 'Consulta e scarica i registri per mese e semestre.', icon: Archive, accent: { from: '232 68% 52%', to: '244 70% 60%' } },
   { key: 'ingresso', label: 'Alimenti in Ingresso', short: 'Ingresso', description: 'Registra gli alimenti con lotto, fornitore e scadenza.', icon: PackagePlus, accent: { from: '152 68% 34%', to: '158 62% 46%' } },
@@ -86,7 +89,7 @@ export default function HaccpDashboard() {
   const [refreshTrigger, setRefreshTrigger] = useState(0);
   const [showSettings, setShowSettings] = useState(false);
   const [autoUnlocked, setAutoUnlocked] = useState(false);
-  const [activeTab, setActiveTab] = useState<TabKey>('daily');
+  const [activeTab, setActiveTab] = useState<TabKey>('cruscotto');
   const [pestToken, setPestToken] = useState<string | null>(null);
   const [stats, setStats] = useState<{ total: number; thisMonth: number; thisYear: number; lastRecord: string | null }>({
     total: 0,
@@ -333,6 +336,16 @@ export default function HaccpDashboard() {
 
   const renderContent = () => {
     switch (activeTab) {
+      case 'cruscotto':
+        return (
+          <Cruscotto
+            companyId={authCompany?.id ?? null}
+            company={companyInfo}
+            logoUrl={logoUrl}
+            refreshTrigger={refreshTrigger}
+            onNavigate={(tab) => goTo(tab as TabKey)}
+          />
+        );
       case 'daily':
         return <HaccpForm company={companyInfo} onRecordSaved={handleRecordUpdate} />;
       case 'auto':
@@ -558,29 +571,31 @@ export default function HaccpDashboard() {
         {/* Installazione PWA / attivazione notifiche (compare solo se utile) */}
         <PwaInstallBanner companyId={authCompany?.id ?? null} />
 
-        {/* Statistiche: su mobile restano nella sezione iniziale per non rubare spazio alle altre */}
-        <div className={cn('mb-8 grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4', activeTab !== 'daily' && 'hidden lg:grid')}>
-          {statCards.map((s) => (
-            <Card
-              key={s.label}
-              className="rounded-2xl border-border/70 shadow-card transition-all duration-300 hover:-translate-y-1 hover:shadow-elevated"
-            >
-              <CardContent className="flex items-center justify-between gap-3 p-4 sm:p-5">
-                <div className="min-w-0">
-                  <p className="truncate text-xs font-medium text-muted-foreground sm:text-sm">{s.label}</p>
-                  {statsLoading ? (
-                    <Skeleton className="mt-2 h-8 w-16" />
-                  ) : (
-                    <p className={`mt-1 truncate text-2xl font-bold tracking-tight sm:text-3xl ${s.tone}`}>{s.value}</p>
-                  )}
-                </div>
-                <span className={`grid h-11 w-11 shrink-0 place-items-center rounded-2xl ${s.tile} sm:h-12 sm:w-12`}>
-                  <s.icon className="h-5 w-5" />
-                </span>
-              </CardContent>
-            </Card>
-          ))}
-        </div>
+        {/* Statistiche generali: il cruscotto espone le proprie metriche, quindi qui non servono */}
+        {activeTab !== 'cruscotto' && (
+          <div className={cn('mb-8 grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4', activeTab !== 'daily' && 'hidden lg:grid')}>
+            {statCards.map((s) => (
+              <Card
+                key={s.label}
+                className="rounded-2xl border-border/70 shadow-card transition-all duration-300 hover:-translate-y-1 hover:shadow-elevated"
+              >
+                <CardContent className="flex items-center justify-between gap-3 p-4 sm:p-5">
+                  <div className="min-w-0">
+                    <p className="truncate text-xs font-medium text-muted-foreground sm:text-sm">{s.label}</p>
+                    {statsLoading ? (
+                      <Skeleton className="mt-2 h-8 w-16" />
+                    ) : (
+                      <p className={`mt-1 truncate text-2xl font-bold tracking-tight sm:text-3xl ${s.tone}`}>{s.value}</p>
+                    )}
+                  </div>
+                  <span className={`grid h-11 w-11 shrink-0 place-items-center rounded-2xl ${s.tile} sm:h-12 sm:w-12`}>
+                    <s.icon className="h-5 w-5" />
+                  </span>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        )}
 
         {/* Contenuto sezione */}
         <div key={activeTab} className="animate-fade-in">
