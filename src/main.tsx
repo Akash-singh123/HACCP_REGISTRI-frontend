@@ -3,6 +3,8 @@ import App from './App.tsx';
 import './index.css';
 import ErrorBoundary from '@/components/ErrorBoundary';
 import { installAppGuard } from '@/lib/appGuard';
+import { getActiveCompany } from '@/lib/api';
+import { installObservability } from '@/lib/observability';
 import { applyServiceWorkerUpdate, registerServiceWorker, setupInstallPrompt } from '@/lib/pwa';
 import { initRecordSync } from '@/lib/recordSync';
 import { toast } from 'sonner';
@@ -12,6 +14,10 @@ import { toast } from 'sonner';
 const canStart = installAppGuard();
 
 if (canStart) {
+  // Osservabilità: cattura errori React, globali e promise non gestite.
+  // L'azienda attiva viene risolta al momento dell'invio (mai presa da input).
+  installObservability({ getCompanyId: () => getActiveCompany() });
+
   setupInstallPrompt();
 
   // Sincronizzazione dei registri HACCP compilati offline (coda + retry automatico).

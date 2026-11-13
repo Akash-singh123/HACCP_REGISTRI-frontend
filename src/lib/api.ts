@@ -1,4 +1,5 @@
 import { invokeFunction, supabase, type FunctionError } from './supabaseClient';
+import { captureError } from './observability';
 import type { HaccpRecord, Equipment, EquipmentKind } from '@/types/haccp';
 
 export class ApiError extends Error {
@@ -27,7 +28,18 @@ async function call<T>(
     return await invokeFunction<T>(fn, body, companyId ? { 'x-company-id': companyId } : undefined);
   } catch (err) {
     const e = err as FunctionError;
-    throw new ApiError(e?.message ?? 'Errore inatteso', e?.status ?? 0, e?.code);
+    const status = e?.status ?? 0;
+    // Un errore di rete (status 0) o un 5xx indica un problema reale dell'app:
+    // lo segnaliamo all'osservabilità. I 4xx sono comportamenti attesi del
+    // client (permessi, validazione) e non vengono riportati come anomalie.
+    if (status === 0 || status >= 500) {
+      captureError(err, {
+        source: 'api',
+        level: status === 0 ? 'warning' : 'error',
+        context: { fn, status, code: e?.code ?? null },
+      });
+    }
+    throw new ApiError(e?.message ?? 'Errore inatteso', status, e?.code);
   }
 }
 
@@ -574,6 +586,50 @@ export interface AlertListResult {
   generatedAt: string;
 }
 
+// ── Osservabilità ed error monitoring (consultazione per il gestore) ────────
+
+/** Singolo report di errore raccolto dal frontend. */
+export interface TelemetryReport {
+  id: number;
+  created_at: string;
+  company_id: string | null;
+  company_name?: string | null;
+  user_id: string | null;
+  level: 'error' | 'warning' | 'info';
+  source: string;
+  message: string;
+  stack: string | null;
+  route: string | null;
+  app_version: string | null;
+  user_agent: string | null;
+  session_id: string | null;
+  context: Record<string, unknown>;
+  fingerprint: string;
+  resolved_at: string | null;
+}
+
+/** Gruppo di errori equivalenti (stessa impronta) con il numero di occorrenze. */
+export interface TelemetryGroup {
+  fingerprint: string;
+  level: string;
+  source: string;
+  count: number;
+  lastSeen: string;
+  resolved: boolean;
+}
+
+/** Aggregati per il cruscotto di osservabilità. */
+export interface TelemetryStats {
+  since: string;
+  total: number;
+  unresolved: number;
+  truncated: boolean;
+  byLevel: Record<string, number>;
+  bySource: Record<string, number>;
+  byDay: Record<string, number>;
+  groups: TelemetryGroup[];
+}
+
 export const api = {
   allergenTable: {
     list: (companyId: string) =>
@@ -827,6 +883,26 @@ export const api = {
         keys ? { action: 'mark-read', keys } : { action: 'mark-read' },
         companyId,
       ),
+  },
+
+  // Osservabilità: consultazione dei report di errore. Riservata al gestore
+  // (nessun company_id: l'autorizzazione è verificata lato server).
+  telemetry: {
+    list: (params?: {
+      level?: 'error' | 'warning' | 'info';
+      source?: string;
+      company_id?: string;
+      fingerprint?: string;
+      resolved?: boolean;
+      limit?: number;
+    }) => call<{ items: TelemetryReport[] }>('telemetry', { action: 'list', ...params }),
+    stats: (days = 7) => call<TelemetryStats>('telemetry', { action: 'stats', days }),
+    resolve: (ids: number[], resolved = true) =>
+      call<{ ok: boolean; updated: number; resolved: boolean }>('telemetry', {
+        action: 'resolve',
+        ids,
+        resolved,
+      }),
   },
 };
 

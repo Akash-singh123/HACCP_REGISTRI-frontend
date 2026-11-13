@@ -1,4 +1,5 @@
 import React from 'react';
+import { captureError } from '@/lib/observability';
 
 type ErrorBoundaryState = { hasError: boolean; error?: unknown };
 
@@ -12,9 +13,14 @@ export class ErrorBoundary extends React.Component<React.PropsWithChildren, Erro
     return { hasError: true, error };
   }
 
-  componentDidCatch(error: unknown, errorInfo: unknown) {
+  componentDidCatch(error: unknown, errorInfo: React.ErrorInfo) {
     // Logga l'errore in console per debug veloce
     console.error('[ErrorBoundary] Runtime error caught', error, errorInfo);
+    // Invia l'errore al servizio di osservabilità (batch, con stack del componente).
+    captureError(error, {
+      source: 'react',
+      context: { componentStack: errorInfo?.componentStack ?? null },
+    });
   }
 
   handleReload = () => {

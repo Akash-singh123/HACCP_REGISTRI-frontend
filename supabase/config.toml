@@ -32,5 +32,10 @@ verify_jwt = true
 [functions.alerts]
 verify_jwt = false
 
+# Osservabilità: raccolta report di errore (utenti autenticati) e consultazione
+# (solo platform admin). Tutte le azioni richiedono un JWT valido.
+[functions.telemetry]
+verify_jwt = true
+
 [storage]
 enabled = true

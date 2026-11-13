@@ -19,7 +19,9 @@ Browser (thin client)  ──JWT──►  Edge Function (guard.ts)  ──servi
 | `src/lib/docs.ts` | Helper Storage: i file vivono su Supabase Storage sotto `<company_id>/...`, nessun segreto nel client |
 | `supabase/functions/_shared/guard.ts` | **Cuore della sicurezza**: verifica JWT → appartenenza → ruolo → licenza → rate limit → audit |
 | `supabase/functions/haccp-docs` | Archiviazione documenti su bucket privato `haccp-docs`, isolato per azienda (`path_company_id()`) |
+| `supabase/functions/telemetry` | Raccolta errori runtime (scrittura con `guard`) e consultazione riservata ai platform admin |
 | `supabase/migrations/002_rls_policies.sql` | RLS: nessun dato accessibile senza appartenenza + licenza attiva |
+| `supabase/migrations/021_observability.sql` | Tabella `error_reports` accessibile **solo** via `service_role` |
 
 ## Misure implementate
 
@@ -34,6 +36,29 @@ Browser (thin client)  ──JWT──►  Edge Function (guard.ts)  ──servi
 8. **Offuscamento** — `rollup-obfuscator` in build di produzione; `sourcemap: false`.
 9. **Verifica automatica** — `scripts/security-check.mjs` blocca la pubblicazione se trova segreti o sourcemap;
    eseguito in CI (`.github/workflows/security.yml`).
+10. **Osservabilità / error monitoring** — gli errori runtime sono raccolti dal client e persistiti
+    server-side senza esporre dati sensibili (vedi sezione dedicata).
+
+## Osservabilità e monitoraggio errori
+
+Il client cattura gli errori runtime (React Error Boundary, `window.onerror`, `unhandledrejection`,
+errori API ≥ 500) e li invia in batch all'Edge Function `telemetry`. Tutta la sanitizzazione
+avviene **lato server**: il client non è considerato affidabile.
+
+- **Attribuzione server-side** — `company_id` e `user_id` sono derivati dal JWT/membership nel
+  `guard`, mai fidandosi di ciò che invia il client.
+- **Sanitizzazione** — messaggi, stack e contesto sono troncati e ripuliti (URL, UUID, hash e
+  numeri normalizzati) in `supabase/functions/_shared/observability.ts`; nessun segreto.
+- **Minimizzazione** — limiti stringenti su dimensione batch, lunghezza campi e chiavi di contesto.
+- **Accesso ai dati** — `error_reports` ha RLS con **nessuna policy** e privilegi revocati ad
+  `anon`/`authenticated`: leggibile/scrivibile **solo** con `service_role`. La scrittura passa dal
+  `guard` (azione `report`, rate limit dedicato); lettura e risoluzione (`list`/`stats`/`resolve`)
+  richiedono `requirePlatformAdmin`.
+- **Retention** — `prune_error_reports(90)` + job `pg_cron` giornaliero rimuovono gli eventi oltre
+  90 giorni; la funzione è `SECURITY DEFINER` e revocata ai client.
+- **Visibilità** — dashboard riservata ai platform admin su `/admin/osservabilita`.
+- **Privacy** — nessun dato personale dell'utente finale: solo il contesto tecnico necessario alla
+  diagnosi; l'`user_agent` e la route sono troncati.
 
 ## Dati pubblici (QR code)
 
@@ -52,6 +77,8 @@ al cliente finale. Non espone logica né dati di altri tenant.
 | T6 | Rate limit | >60 richieste/min sulla stessa azione | `429 rate_limited` |
 | T7 | Allergeni non validi | `upsert` con allergene fuori dai 14 | `400 bad_allergens` |
 | T8 | Ruolo insufficiente | `delete` con ruolo `staff` | `403 forbidden_role` |
+| T9 | Report non leggibili dal client | `select` su `error_reports` con `anon`/`authenticated` | negato (RLS senza policy) |
+| T10 | Consultazione riservata | `telemetry` azione `list` con utente non platform admin | `403 not_platform_admin` |
 
 ### Esecuzione rapida (T3–T8)
 
@@ -68,7 +95,7 @@ curl -i -X POST "$SUPABASE_URL/functions/v1/allergen-table" `
 supabase login
 supabase link --project-ref <PROJECT_REF>
 supabase db push
-supabase functions deploy allergen-table generate-records-pdf haccp-data haccp-docs admin-clients
+supabase functions deploy allergen-table generate-records-pdf haccp-data haccp-docs admin-clients telemetry
 ```
 
 Le Edge Functions ricevono automaticamente `SUPABASE_URL`, `SUPABASE_ANON_KEY` e

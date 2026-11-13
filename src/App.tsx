@@ -16,6 +16,7 @@ const AllergeniPubblico = lazy(() => import('./pages/AllergeniPubblico'));
 const Login = lazy(() => import('./pages/Login'));
 const Landing = lazy(() => import('./pages/Landing'));
 const AdminClienti = lazy(() => import('./pages/AdminClienti'));
+const AdminOsservabilita = lazy(() => import('./pages/AdminOsservabilita'));
 const LicenseBlocked = lazy(() => import('./components/LicenseBlocked'));
 
 const queryClient = new QueryClient();
@@ -87,6 +88,7 @@ const App = () => (
               <Route path="/login" element={<Login />} />
               <Route path="/allergeni" element={<AllergeniPubblico />} />
               <Route path="/admin" element={<PlatformAdminOnly><AdminClienti /></PlatformAdminOnly>} />
+              <Route path="/admin/osservabilita" element={<PlatformAdminOnly><AdminOsservabilita /></PlatformAdminOnly>} />
               <Route path="/" element={<HomeRoute />} />
               <Route path="/firma-osa" element={<Protected><LicenseGate><OsaSignature /></LicenseGate></Protected>} />
               <Route path="*" element={<NotFound />} />
