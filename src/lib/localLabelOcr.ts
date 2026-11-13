@@ -58,7 +58,7 @@ function mapProgress(status: string, progress: number): LocalOcrProgress {
 async function getWorker(): Promise<LocalWorker> {
   if (!workerPromise) {
     workerPromise = (async () => {
-      const { createWorker, OEM } = await import('tesseract.js');
+      const { createWorker, OEM, PSM } = await import('tesseract.js');
       const worker = await createWorker('ita', OEM.LSTM_ONLY, {
         workerPath: WORKER_PATH,
         corePath: ASSET_DIR,
@@ -74,7 +74,7 @@ async function getWorker(): Promise<LocalWorker> {
 
       await worker.setParameters({
         // PSM 11 (SPARSE_TEXT): testo sparso su tutta la superficie dell'etichetta.
-        tessedit_pageseg_mode: '11',
+        tessedit_pageseg_mode: PSM.SPARSE_TEXT,
         preserve_interword_spaces: '1',
         user_defined_dpi: '300',
       });

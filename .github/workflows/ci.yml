@@ -1,0 +1,97 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+
+# Annulla le esecuzioni precedenti sullo stesso ref: risparmia minuti di CI
+# quando si puschano più commit in rapida successione.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  # ────────────────────────────────────────────────────────────────────────
+  # QUALITY GATE: lint, tipi e test unitari/di integrazione. È il primo
+  # filtro: se questo fallisce, il codice non è pronto per la review.
+  # ────────────────────────────────────────────────────────────────────────
+  quality:
+    name: Lint · Typecheck · Unit test
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 8
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Lint
+        run: pnpm lint
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Test unitari e di integrazione (con coverage)
+        run: pnpm test:coverage
+
+      - name: Salva il report di coverage
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage
+          path: coverage/
+          if-no-files-found: ignore
+
+  # ────────────────────────────────────────────────────────────────────────
+  # E2E: i flussi critici (landing, login, guardie di rotta) su un browser
+  # reale, con il backend simulato: nessuna richiesta tocca Supabase.
+  # ────────────────────────────────────────────────────────────────────────
+  e2e:
+    name: E2E (Playwright)
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 8
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Installa il browser (Chromium) con le dipendenze di sistema
+        run: pnpm exec playwright install --with-deps chromium
+
+      - name: Esegui gli E2E
+        run: pnpm e2e
+
+      - name: Salva il report Playwright (solo in caso di problemi)
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: playwright-report/
+          retention-days: 7
+          if-no-files-found: ignore
