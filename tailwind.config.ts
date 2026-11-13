@@ -51,6 +51,10 @@ export default {
         brand: {
           DEFAULT: "hsl(187 90% 45%)",
           deep: "hsl(190 92% 28%)",
+          /** Blu profondo per elementi principali e titoli. */
+          navy: "hsl(212 68% 16%)",
+          /** Azzurro elettrico per evidenziare funzionalità e accenti. */
+          electric: "hsl(199 92% 48%)",
         },
         muted: {
           DEFAULT: "hsl(var(--muted))",
@@ -124,6 +128,22 @@ export default {
         shimmer: {
           "100%": { transform: "translateX(100%)" },
         },
+        float: {
+          "0%, 100%": { transform: "translateY(0)" },
+          "50%": { transform: "translateY(-10px)" },
+        },
+        "float-slow": {
+          "0%, 100%": { transform: "translateY(0) rotate(0deg)" },
+          "50%": { transform: "translateY(-14px) rotate(-0.6deg)" },
+        },
+        "gradient-pan": {
+          "0%, 100%": { backgroundPosition: "0% 50%" },
+          "50%": { backgroundPosition: "100% 50%" },
+        },
+        "pulse-soft": {
+          "0%, 100%": { opacity: "1" },
+          "50%": { opacity: "0.55" },
+        },
       },
       animation: {
         "accordion-down": "accordion-down 0.2s ease-out",
@@ -132,6 +152,10 @@ export default {
         "slide-up": "slide-up 0.3s cubic-bezier(0.16, 1, 0.3, 1)",
         "scale-in": "scale-in 0.18s cubic-bezier(0.16, 1, 0.3, 1)",
         shimmer: "shimmer 1.8s infinite",
+        float: "float 6s ease-in-out infinite",
+        "float-slow": "float-slow 9s ease-in-out infinite",
+        "gradient-pan": "gradient-pan 12s ease-in-out infinite",
+        "pulse-soft": "pulse-soft 2.4s ease-in-out infinite",
       },
     },
   },

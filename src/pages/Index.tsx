@@ -46,11 +46,15 @@ import { PushSettingsRow, PwaInstallBanner } from '@/components/Pwa';
 import { OfflineSyncBanner } from '@/components/OfflineSyncBanner';
 import { NotificationCenter } from '@/components/NotificationCenter';
 import { CategoryGrid } from '@/components/CategoryGrid';
+import { DashboardSidebar, type SidebarGroup } from '@/components/DashboardSidebar';
+import { AREA } from '@/lib/areaIdentity';
 import { startAutoRegisterScheduler } from '@/lib/autoRegisters';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 
 type TabKey = 'cruscotto' | 'daily' | 'auto' | 'archive' | 'ingresso' | 'cloud' | 'semilavorati' | 'firma-osa' | 'allergeni' | 'infestanti' | 'stampanti' | 'abbonamento';
+
+type TabGroup = 'operativo' | 'gestione' | 'archivio' | 'sistema';
 
 interface NavItem {
   key: TabKey;
@@ -58,22 +62,32 @@ interface NavItem {
   short: string;
   description: string;
   icon: LucideIcon;
+  /** Gruppo funzionale: separa operatività, aree gestionali, archivio e sistema. */
+  group: TabGroup;
   /** Identità colore della categoria (due stop HSL per gradiente e tinta). */
   accent: { from: string; to: string };
 }
 
+/** Etichette e ordine dei gruppi nella navigazione laterale. */
+const NAV_GROUP_ORDER: { id: TabGroup; label: string }[] = [
+  { id: 'operativo', label: 'Operatività' },
+  { id: 'gestione', label: 'Aree gestionali' },
+  { id: 'archivio', label: 'Registri e archivio' },
+  { id: 'sistema', label: 'Sistema' },
+];
+
 const NAV_ITEMS: NavItem[] = [
-  { key: 'cruscotto', label: 'Cruscotto di Conformità', short: 'Cruscotto', description: "Indice di conformità, trend e non conformità per la gestione e l'ispezione.", icon: Gauge, accent: { from: '221 83% 45%', to: '231 78% 56%' } },
-  { key: 'daily', label: 'Compilazione Giornaliera', short: 'Compila', description: 'Annota temperatura e sanificazione di oggi.', icon: ClipboardList, accent: { from: '190 88% 34%', to: '186 84% 46%' } },
-  { key: 'archive', label: 'Archivio e Consultazione', short: 'Archivio', description: 'Consulta e scarica i registri per mese e semestre.', icon: Archive, accent: { from: '232 68% 52%', to: '244 70% 60%' } },
-  { key: 'ingresso', label: 'Alimenti in Ingresso', short: 'Ingresso', description: 'Registra gli alimenti con lotto, fornitore e scadenza.', icon: PackagePlus, accent: { from: '152 68% 34%', to: '158 62% 46%' } },
-  { key: 'semilavorati', label: 'Prodotti Semilavorati', short: 'Semilavorati', description: 'Gestisci prodotti, categorie e registra i lotti di produzione.', icon: ChefHat, accent: { from: '26 90% 50%', to: '36 92% 56%' } },
-  { key: 'allergeni', label: 'Tabella Allergeni', short: 'Allergeni', description: 'Tabella allergeni per prodotto, pronta da stampare.', icon: ShieldAlert, accent: { from: '348 78% 50%', to: '356 78% 58%' } },
-  { key: 'infestanti', label: 'Controllo Infestanti', short: 'Infestanti', description: 'Piano di monitoraggio, postazioni e interventi di disinfestazione.', icon: Bug, accent: { from: '268 68% 52%', to: '280 66% 60%' } },
-  { key: 'cloud', label: 'Archivio Documenti', short: 'Documenti', description: 'Tutti i documenti PDF archiviati nel cloud.', icon: FolderOpen, accent: { from: '205 85% 44%', to: '195 84% 50%' } },
-  { key: 'firma-osa', label: 'Firma OSA', short: 'Firma OSA', description: "Apponi la firma dell'operatore OSA.", icon: Signature, accent: { from: '166 66% 34%', to: '172 62% 44%' } },
-  { key: 'stampanti', label: 'Stampanti ed Etichette', short: 'Stampanti', description: 'Collega le stampanti e configura i formati delle etichette.', icon: Printer, accent: { from: '220 20% 44%', to: '220 16% 54%' } },
-  { key: 'abbonamento', label: 'Abbonamento', short: 'Piano', description: 'Stato del piano e gestione del pagamento.', icon: CreditCard, accent: { from: '42 88% 46%', to: '34 90% 52%' } },
+  { key: 'cruscotto', label: 'Cruscotto di Conformità', short: 'Cruscotto', description: "Indice di conformità, trend e non conformità.", icon: Gauge, group: 'operativo', accent: AREA.haccp },
+  { key: 'daily', label: 'Compilazione Giornaliera', short: 'Compila', description: 'Annota temperatura e sanificazione di oggi.', icon: ClipboardList, group: 'operativo', accent: AREA.temperature },
+  { key: 'firma-osa', label: 'Firma OSA', short: 'Firma OSA', description: "Apponi la firma dell'operatore OSA.", icon: Signature, group: 'operativo', accent: AREA.sanificazione },
+  { key: 'ingresso', label: 'Alimenti in Ingresso', short: 'Ingresso', description: 'Registra gli alimenti con lotto, fornitore e scadenza.', icon: PackagePlus, group: 'gestione', accent: AREA.traceability },
+  { key: 'semilavorati', label: 'Prodotti Semilavorati', short: 'Semilavorati', description: 'Prodotti, categorie e lotti di produzione.', icon: ChefHat, group: 'gestione', accent: AREA.semilavorati },
+  { key: 'allergeni', label: 'Tabella Allergeni', short: 'Allergeni', description: 'Tabella allergeni per prodotto, pronta da stampare.', icon: ShieldAlert, group: 'gestione', accent: AREA.allergeni },
+  { key: 'infestanti', label: 'Controllo Infestanti', short: 'Infestanti', description: 'Monitoraggio, postazioni e interventi di disinfestazione.', icon: Bug, group: 'gestione', accent: AREA.pest },
+  { key: 'archive', label: 'Archivio e Consultazione', short: 'Archivio', description: 'Consulta e scarica i registri per mese e semestre.', icon: Archive, group: 'archivio', accent: AREA.haccp },
+  { key: 'cloud', label: 'Archivio Documenti', short: 'Documenti', description: 'Tutti i documenti PDF archiviati nel cloud.', icon: FolderOpen, group: 'archivio', accent: AREA.documenti },
+  { key: 'stampanti', label: 'Stampanti ed Etichette', short: 'Stampanti', description: 'Collega le stampanti e configura i formati.', icon: Printer, group: 'sistema', accent: AREA.sistema },
+  { key: 'abbonamento', label: 'Abbonamento', short: 'Piano', description: 'Stato del piano e gestione del pagamento.', icon: CreditCard, group: 'sistema', accent: AREA.sistema },
 ];
 
 const AUTO_ITEM: NavItem = {
@@ -82,7 +96,8 @@ const AUTO_ITEM: NavItem = {
   short: 'Auto',
   description: 'Genera automaticamente i registri del periodo.',
   icon: Zap,
-  accent: { from: '288 72% 52%', to: '300 74% 60%' },
+  group: 'operativo',
+  accent: AREA.sanificazione,
 };
 
 export default function HaccpDashboard() {
@@ -124,6 +139,16 @@ export default function HaccpDashboard() {
   );
 
   const activeItem = useMemo(() => navItems.find((n) => n.key === activeTab) ?? NAV_ITEMS[0], [navItems, activeTab]);
+
+  // Voci raggruppate per area funzionale: alimenta la navigazione laterale.
+  const navGroups = useMemo<SidebarGroup[]>(
+    () =>
+      NAV_GROUP_ORDER.map((group) => ({
+        label: group.label,
+        items: navItems.filter((item) => item.group === group.id),
+      })).filter((group) => group.items.length > 0),
+    [navItems],
+  );
 
   // Mantiene la voce attiva centrata nella barra di navigazione mobile scorrevole.
   useEffect(() => {
@@ -404,33 +429,21 @@ export default function HaccpDashboard() {
           </div>
         </div>
 
-        {/* Navigazione desktop */}
-        <nav className="hidden border-t border-border/60 lg:block">
-          <div className="mx-auto flex max-w-7xl flex-wrap items-center gap-1.5 px-4 py-2.5 sm:px-6 lg:px-8">
-            {navItems.map((item) => {
-              const active = activeTab === item.key;
-              return (
-                <button
-                  key={item.key}
-                  type="button"
-                  onClick={() => goTo(item.key)}
-                  aria-current={active ? 'page' : undefined}
-                  className={[
-                    'inline-flex shrink-0 items-center gap-2 whitespace-nowrap rounded-full px-4 py-2.5 text-sm font-medium transition-all duration-200',
-                    active ? 'text-white shadow-glow' : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground',
-                  ].join(' ')}
-                  style={active ? { backgroundImage: `linear-gradient(120deg, hsl(${item.accent.from}), hsl(${item.accent.to}))` } : undefined}
-                >
-                  <item.icon className="h-4 w-4" style={active ? undefined : { color: `hsl(${item.accent.from})` }} />
-                  {item.short}
-                </button>
-              );
-            })}
-          </div>
-        </nav>
       </header>
 
-      <main className="mx-auto w-full max-w-7xl px-4 pb-36 pt-6 sm:px-6 lg:px-8 lg:pb-10">
+      <div className="mx-auto flex w-full max-w-7xl gap-6 px-4 pt-6 sm:px-6 lg:px-8">
+        {/* Navigazione laterale (desktop): ogni categoria è una scheda autonoma. */}
+        <aside className="hidden w-72 shrink-0 lg:block">
+          <div className="sticky top-24">
+            <DashboardSidebar
+              groups={navGroups}
+              activeKey={activeTab}
+              onSelect={(key) => goTo(key as TabKey)}
+            />
+          </div>
+        </aside>
+
+        <main className="min-w-0 flex-1 pb-36 lg:pb-10">
         {/* Intestazione sezione */}
         <div
           className="mb-6 flex flex-wrap items-center justify-between gap-4 rounded-2xl border p-4 shadow-card sm:p-5"
@@ -602,6 +615,7 @@ export default function HaccpDashboard() {
           </section>
         )}
       </main>
+      </div>
 
       {/* ── Navigazione mobile ───────────────────────────────── */}
       <nav className="fixed inset-x-0 bottom-0 z-40 border-t border-border/60 bg-background/95 pb-[env(safe-area-inset-bottom)] shadow-[0_-8px_30px_-12px_rgba(15,23,42,0.18)] backdrop-blur-xl lg:hidden">

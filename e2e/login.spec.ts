@@ -66,7 +66,7 @@ test.describe('Accesso e navigazione', () => {
 
   test('una rotta inesistente mostra la pagina 404', async ({ page }) => {
     await page.goto('/percorso-inesistente');
-    await expect(page.getByRole('heading', { name: '404' })).toBeVisible();
-    await expect(page.getByText('Page Not Found')).toBeVisible();
+    await expect(page.getByText('404', { exact: true })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Pagina non trovata' })).toBeVisible();
   });
 });

@@ -221,15 +221,38 @@
     @apply min-h-screen bg-background;
     background-image:
       radial-gradient(1100px 560px at 100% -12%, hsl(var(--primary) / 0.10), transparent 62%),
-      radial-gradient(900px 520px at -12% -4%, hsl(187 90% 45% / 0.09), transparent 58%),
+      radial-gradient(900px 520px at -12% -4%, hsl(199 92% 48% / 0.09), transparent 58%),
       linear-gradient(180deg, hsl(var(--background)) 0%, hsl(200 42% 97%) 100%);
   }
 
   .dark .app-shell {
     background-image:
       radial-gradient(1100px 560px at 100% -12%, hsl(var(--primary) / 0.16), transparent 62%),
-      radial-gradient(900px 520px at -12% -4%, hsl(187 90% 45% / 0.12), transparent 58%),
+      radial-gradient(900px 520px at -12% -4%, hsl(199 92% 48% / 0.12), transparent 58%),
       linear-gradient(180deg, hsl(var(--background)) 0%, hsl(205 45% 6%) 100%);
+  }
+
+  /* Banda con gradiente animato molto lento: usata nelle sezioni d'impatto. */
+  .gradient-band {
+    background-image: linear-gradient(
+      120deg,
+      hsl(var(--primary)) 0%,
+      hsl(199 92% 42%) 45%,
+      hsl(212 68% 24%) 100%
+    );
+    background-size: 200% 200%;
+  }
+
+  /* Titolo display con tracking stretto e gerarchia forte. */
+  .display-title {
+    @apply font-bold tracking-[-0.02em];
+    text-wrap: balance;
+  }
+
+  /* Paragrafo introduttivo leggibile, mai sotto i 16px. */
+  .lead {
+    @apply text-base leading-relaxed text-muted-foreground sm:text-lg;
+    text-wrap: pretty;
   }
 
   /* Card con bordo soft ed elevazione discreta */
@@ -281,5 +304,18 @@
     -webkit-print-color-adjust: exact !important;
     print-color-adjust: exact !important;
     background: #ffffff !important;
+  }
+}
+
+/* Accessibilità: chi preferisce ridurre le animazioni le vede disattivate.
+   Le microinterazioni restano funzionali ma senza movimento continuo. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
   }
 }

@@ -44,7 +44,7 @@ export function PublicHeader() {
 
   return (
     <header className="sticky top-0 z-40 border-b border-border/60 bg-background/85 backdrop-blur-xl">
-      <div aria-hidden className="h-0.5 w-full bg-gradient-to-r from-primary via-brand to-primary/30" />
+      <div aria-hidden className="h-0.5 w-full bg-gradient-to-r from-brand-electric via-brand to-brand-navy/40" />
       <div className="mx-auto flex h-16 w-full max-w-6xl items-center justify-between gap-4 px-4">
         <Link to="/" className="flex items-center gap-2.5">
           <img src="/brand/alimex_logo.svg" alt={BRAND} className="h-11 w-auto" />
@@ -142,7 +142,7 @@ export function PublicCta({
   return (
     <section className="py-20">
       <div className="mx-auto w-full max-w-6xl px-4">
-        <div className="relative overflow-hidden rounded-3xl border border-primary/20 bg-gradient-to-br from-primary via-primary/90 to-brand p-9 text-center text-primary-foreground shadow-glow sm:p-14">
+        <div className="gradient-band animate-gradient-pan relative overflow-hidden rounded-3xl border border-primary/20 p-9 text-center text-primary-foreground shadow-glow sm:p-14">
           <div
             aria-hidden
             className="pointer-events-none absolute inset-0 text-white/10"

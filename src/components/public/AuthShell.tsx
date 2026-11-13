@@ -51,14 +51,14 @@ export default function AuthShell({
     <div className="app-shell relative overflow-hidden">
       {/* Elementi decorativi di sfondo */}
       <div aria-hidden className="pointer-events-none absolute inset-0 overflow-hidden">
-        <div className="absolute -left-40 -top-40 h-[26rem] w-[26rem] rounded-full bg-primary/10 blur-3xl" />
-        <div className="absolute -bottom-48 -right-32 h-[32rem] w-[32rem] rounded-full bg-[hsl(187_90%_45%)]/10 blur-3xl" />
+        <div className="absolute -left-40 -top-40 h-[26rem] w-[26rem] rounded-full bg-brand-electric/10 blur-3xl" />
+        <div className="absolute -bottom-48 -right-32 h-[32rem] w-[32rem] rounded-full bg-brand/10 blur-3xl" />
       </div>
 
       <div className="relative mx-auto flex min-h-screen w-full max-w-6xl flex-col justify-center gap-8 px-4 py-10 lg:flex-row lg:items-center lg:gap-14 lg:py-14">
         {/* ---------------------------------------------------- BRANDING / HERO */}
         <section className="animate-slide-up lg:flex-1">
-          <div className="relative overflow-hidden rounded-2xl border border-primary/20 bg-gradient-to-br from-primary via-primary to-[hsl(187_85%_38%)] p-7 text-primary-foreground shadow-glow sm:p-9">
+          <div className="gradient-band animate-gradient-pan relative overflow-hidden rounded-2xl border border-white/10 p-7 text-primary-foreground shadow-glow sm:p-9">
             <div
               aria-hidden
               className="pointer-events-none absolute inset-0 text-white/10"

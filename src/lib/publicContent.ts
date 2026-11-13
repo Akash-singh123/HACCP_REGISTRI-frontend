@@ -1,6 +1,5 @@
 import {
   Bug,
-  CalendarClock,
   CheckCircle2,
   ChefHat,
   ClipboardCheck,
@@ -11,7 +10,6 @@ import {
   Leaf,
   Lock,
   Monitor,
-  Package,
   ScanLine,
   Server,
   ShieldCheck,
@@ -20,8 +18,10 @@ import {
   Sparkles,
   Tablet,
   Thermometer,
+  type LucideIcon,
 } from 'lucide-react';
 import type { PublicPlans } from '@/lib/api';
+import { AREA, type AreaAccent } from '@/lib/areaIdentity';
 
 /** Nome commerciale mostrato nel sito pubblico: modifica qui per rinominare il prodotto. */
 export const BRAND = 'Alimex';
@@ -52,98 +52,135 @@ export function formatPrice(plans: PublicPlans | null): string {
 }
 
 /**
- * Aree principali del gestionale, presentate nella sezione "Tutto sotto controllo".
- * Riflettono le funzionalità effettivamente disponibili nella piattaforma.
+ * Aree principali del gestionale, presentate nella sezione "Tutto sotto controllo"
+ * e nella pagina Funzionalità. Riflettono le funzionalità realmente disponibili
+ * e hanno ciascuna una propria identità cromatica, condivisa con la dashboard.
  */
-export const AREAS = [
+export interface PublicArea {
+  key: string;
+  icon: LucideIcon;
+  title: string;
+  text: string;
+  accent: AreaAccent;
+  /** Etichette sintetiche mostrate nelle illustrazioni della pagina Funzionalità. */
+  points: string[];
+}
+
+export const AREAS: PublicArea[] = [
   {
+    key: 'haccp',
+    icon: ClipboardCheck,
+    title: 'Registri HACCP',
+    text: 'Tutti i registri della tua attività organizzati in un unico ambiente digitale, sempre consultabili e facilmente compilabili.',
+    accent: AREA.haccp,
+    points: ['Controlli giornalieri', 'Stato delle attività', 'Ricerca immediata'],
+  },
+  {
+    key: 'temperature',
     icon: Thermometer,
-    title: 'Registri delle temperature',
-    text: 'Frigoriferi e congelatori personalizzabili, con avvisi immediati quando un valore esce dal range.',
+    title: 'Controllo temperature',
+    text: 'Monitora le temperature delle attrezzature e organizza i controlli di frigoriferi, congelatori e celle frigorifere.',
+    accent: AREA.temperature,
+    points: ['Frigoriferi', 'Congelatori', 'Celle frigorifere'],
   },
   {
-    icon: ChefHat,
-    title: 'Gestione dei semilavorati',
-    text: 'Categorie, prodotti e lotti di produzione con numerazione automatica e storico sempre ordinato.',
-  },
-  {
+    key: 'traceability',
     icon: ScanLine,
-    title: 'Tracciabilità alimentare',
-    text: 'Accettazione merci con lettura di lotto e scadenza dal codice a barre o dalla foto dell’etichetta.',
+    title: 'Tracciabilità e ingresso merci',
+    text: 'Registra le materie prime in ingresso e mantieni organizzate le informazioni necessarie alla tracciabilità alimentare.',
+    accent: AREA.traceability,
+    points: ['Fornitori', 'Lotti', 'Date di scadenza'],
   },
   {
-    icon: CalendarClock,
-    title: 'Etichette e scadenze',
-    text: 'Controllo centralizzato delle date di scadenza di prodotti, lotti e documenti, per non perdere nulla.',
+    key: 'semilavorati',
+    icon: ChefHat,
+    title: 'Semilavorati ed etichette',
+    text: 'Gestisci i semilavorati della tua cucina, registra le preparazioni e genera etichette con informazioni su produzione, lotto e scadenza.',
+    accent: AREA.semilavorati,
+    points: ['Preparazioni', 'Lotti di produzione', 'Etichette'],
   },
   {
+    key: 'sanificazione',
     icon: Sparkles,
     title: 'Pulizia e sanificazione',
-    text: 'Piano di sanificazione con firma digitale dell’operatore OSA, compilabile in pochi secondi.',
+    text: 'Organizza le attività di pulizia e sanificazione, controlla gli interventi e conserva lo storico delle operazioni.',
+    accent: AREA.sanificazione,
+    points: ['Superfici e attrezzature', 'Procedure', 'Storico interventi'],
   },
   {
+    key: 'pest',
     icon: Bug,
     title: 'Disinfestazione e infestanti',
-    text: 'Monitoraggio delle postazioni, anomalie e azioni correttive per il controllo infestanti.',
+    text: 'Gestisci i punti di monitoraggio, registra le verifiche e organizza le attività di prevenzione e controllo degli infestanti.',
+    accent: AREA.pest,
+    points: ['Punti di monitoraggio', 'Verifiche', 'Azioni correttive'],
   },
   {
-    icon: Package,
-    title: 'Prodotti e materie prime',
-    text: 'Anagrafiche ordinate di prodotti, ingredienti e materie prime, sempre a portata di mano.',
-  },
-  {
+    key: 'allergeni',
     icon: Leaf,
-    title: 'Allergeni e informazioni',
-    text: 'Tabella allergeni per prodotto, aggiornata e pronta da stampare ed esporre al cliente.',
-  },
-  {
-    icon: FileText,
-    title: 'Registri e documentazione HACCP',
-    text: 'Esporta registri giornalieri e mensili in PDF, pronti per essere mostrati ai controlli.',
+    title: 'Prodotti e allergeni',
+    text: 'Organizza le informazioni dei prodotti e tieni sotto controllo ingredienti e allergeni.',
+    accent: AREA.allergeni,
+    points: ['Prodotti', 'Ingredienti', 'Allergeni'],
   },
 ];
 
 /** Funzionalità di dettaglio, mostrate nella pagina dedicata. */
-export const FEATURES = [
+export interface PublicFeature {
+  icon: LucideIcon;
+  title: string;
+  text: string;
+  accent: AreaAccent;
+}
+
+export const FEATURES: PublicFeature[] = [
   {
     icon: Thermometer,
     title: 'Registro temperature',
     text: 'Frigoriferi e congelatori personalizzabili: aggiungi, rinomina ed elimina le attrezzature che vuoi, senza limiti.',
+    accent: AREA.temperature,
   },
   {
     icon: ScanLine,
     title: 'Accettazione merci con IA',
     text: 'Scansiona il codice a barre o fotografa l’etichetta: lotto e scadenza vengono letti e compilati automaticamente.',
+    accent: AREA.traceability,
   },
   {
     icon: Signature,
     title: 'Sanificazione e firme',
     text: 'Compila le attività di pulizia e apponi la firma digitale dell’operatore OSA in pochi secondi.',
+    accent: AREA.sanificazione,
   },
   {
     icon: ChefHat,
     title: 'Prodotti semilavorati',
     text: 'Organizza categorie e prodotti e registra i lotti di produzione con numerazione automatica.',
+    accent: AREA.semilavorati,
   },
   {
     icon: Bug,
     title: 'Controllo infestanti',
     text: 'Monitora postazioni e anomalie, registra gli interventi e tieni traccia delle azioni correttive.',
+    accent: AREA.pest,
   },
   {
     icon: Leaf,
     title: 'Tabella allergeni',
     text: 'Tabella allergeni per prodotto, sempre aggiornata e pronta da stampare ed esporre al cliente.',
+    accent: AREA.allergeni,
   },
   {
     icon: FileText,
     title: 'Registri in PDF',
     text: 'Esporta i registri giornalieri e mensili, o scarica interi archivi in un unico file ZIP.',
+    accent: AREA.haccp,
   },
   {
     icon: FolderOpen,
     title: 'Archivio documenti',
     text: 'Manuale, attestati e certificazioni al sicuro nel cloud, accessibili da qualsiasi dispositivo.',
+    accent: AREA.documenti,
   },
 ];
 
@@ -249,22 +286,22 @@ export const FAQ = [
 
 /** Dispositivi supportati, mostrati nella sezione "Accessibile ovunque". */
 export const DEVICES = [
-  { icon: Smartphone, label: 'Smartphone' },
   { icon: Smartphone, label: 'iPhone' },
-  { icon: Tablet, label: 'Tablet' },
+  { icon: Smartphone, label: 'Smartphone Android' },
   { icon: Tablet, label: 'iPad' },
-  { icon: Monitor, label: 'Computer' },
+  { icon: Tablet, label: 'Tablet Android' },
+  { icon: Monitor, label: 'Computer desktop' },
   { icon: Laptop, label: 'Notebook' },
 ];
 
-/** Vantaggi evidenziati nella sezione "Perché scegliere Alimex". */
+/** Vantaggi evidenziati nella sezione "Meno carta, più controllo". */
 export const BENEFITS = [
-  'Meno documenti cartacei da gestire',
-  'Registri sempre organizzati e ricercabili',
-  'Compilazione semplice, anche da smartphone',
-  'Maggiore controllo sulle scadenze',
-  'Tracciabilità più ordinata dei lotti',
-  'Un’unica piattaforma per la gestione quotidiana',
+  'Riduci la gestione dei documenti cartacei',
+  'Organizza i registri in formato digitale',
+  'Tieni sotto controllo le scadenze',
+  'Gestisci la tracciabilità alimentare',
+  'Semplifica le attività quotidiane',
+  'Consulta le informazioni da qualsiasi dispositivo',
 ];
 
 /** Settori a cui si rivolge il prodotto. */
