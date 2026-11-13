@@ -201,7 +201,13 @@ export const saveRecord = async (record: HaccpRecord): Promise<SaveResult> => {
   }
 };
 
-/** Salva più registri. Come saveRecord, gestisce automaticamente la coda offline. */
+/**
+ * Salva più registri generati in blocco (generazione automatica).
+ * La scrittura massiva è riservata agli amministratori di piattaforma e il
+ * backend la verifica: qui usiamo l'azione dedicata `records.generateRange`.
+ * Se il dispositivo è offline i registri vengono accodati e sincronizzati
+ * automaticamente al ritorno della connessione.
+ */
 export const saveRecords = async (records: HaccpRecord[]): Promise<SaveResult> => {
   if (!records.length) return { queued: false };
   const payloads = records.map(toUpsertPayload);
@@ -209,7 +215,7 @@ export const saveRecords = async (records: HaccpRecord[]): Promise<SaveResult> =
   if (offline && (await queueRecords(payloads))) return { queued: true };
 
   try {
-    await activeData.records.upsertMany(payloads);
+    await activeData.records.generateRange(payloads);
     return { queued: false };
   } catch (err) {
     if (isNetworkError(err) && (await queueRecords(payloads))) return { queued: true };

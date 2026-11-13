@@ -32,9 +32,17 @@ test.describe('Accesso e navigazione', () => {
     await expect(page.getByText('Credenziali non valide')).toBeVisible();
   });
 
-  test('la registrazione richiede una password robusta e coincidente', async ({ page }) => {
+  test('chi non ha un account può acquistare subito dalla pagina di accesso', async ({ page }) => {
     await page.goto('/login');
-    await page.getByRole('tab', { name: 'Registrati' }).click();
+    await expect(page.getByText('Non hai ancora un account Alimex?')).toBeVisible();
+
+    await page.getByRole('link', { name: 'Acquista subito' }).click();
+    await expect(page).toHaveURL(/\/registrati\?intent=subscribe$/);
+    await expect(page.getByRole('button', { name: /Registrati e vai al pagamento/ })).toBeVisible();
+  });
+
+  test('la registrazione richiede una password robusta e coincidente', async ({ page }) => {
+    await page.goto('/registrati');
 
     const submit = page.getByRole('button', { name: /Registrati e/ });
 

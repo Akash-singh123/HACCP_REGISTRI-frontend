@@ -45,6 +45,7 @@ const PestControl = lazy(() => import('@/components/pest/PestControl'));
 import { PushSettingsRow, PwaInstallBanner } from '@/components/Pwa';
 import { OfflineSyncBanner } from '@/components/OfflineSyncBanner';
 import { NotificationCenter } from '@/components/NotificationCenter';
+import { CategoryGrid } from '@/components/CategoryGrid';
 import { startAutoRegisterScheduler } from '@/lib/autoRegisters';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
@@ -85,10 +86,9 @@ const AUTO_ITEM: NavItem = {
 };
 
 export default function HaccpDashboard() {
-  const { company: authCompany, signOut, refreshCompany } = useAuth();
+  const { company: authCompany, signOut, refreshCompany, isPlatformAdmin } = useAuth();
   const [refreshTrigger, setRefreshTrigger] = useState(0);
   const [showSettings, setShowSettings] = useState(false);
-  const [autoUnlocked, setAutoUnlocked] = useState(false);
   const [activeTab, setActiveTab] = useState<TabKey>('cruscotto');
   const [pestToken, setPestToken] = useState<string | null>(null);
   const [stats, setStats] = useState<{ total: number; thisMonth: number; thisYear: number; lastRecord: string | null }>({
@@ -102,8 +102,6 @@ export default function HaccpDashboard() {
   const [savingProfile, setSavingProfile] = useState(false);
   const [uploadingLogo, setUploadingLogo] = useState(false);
   const [statsLoading, setStatsLoading] = useState(true);
-  const secretClicksRef = useRef<number>(0);
-  const secretTimerRef = useRef<number | null>(null);
   // Barra di navigazione mobile: contenitore scorrevole e voce attiva da portare in vista.
   const mobileNavRef = useRef<HTMLDivElement>(null);
   const activeNavRef = useRef<HTMLButtonElement>(null);
@@ -118,7 +116,12 @@ export default function HaccpDashboard() {
     };
   }, [authCompany]);
 
-  const navItems = useMemo(() => (autoUnlocked ? [...NAV_ITEMS.slice(0, 1), { ...AUTO_ITEM, description: AUTO_ITEM.description }, ...NAV_ITEMS.slice(1)] : NAV_ITEMS), [autoUnlocked]);
+  // La generazione automatica è riservata al gestore dell'applicazione: la voce
+  // di navigazione compare soltanto per gli amministratori di piattaforma.
+  const navItems = useMemo(
+    () => (isPlatformAdmin ? [...NAV_ITEMS.slice(0, 1), AUTO_ITEM, ...NAV_ITEMS.slice(1)] : NAV_ITEMS),
+    [isPlatformAdmin],
+  );
 
   const activeItem = useMemo(() => navItems.find((n) => n.key === activeTab) ?? NAV_ITEMS[0], [navItems, activeTab]);
 
@@ -277,32 +280,6 @@ export default function HaccpDashboard() {
     setActiveTab(key);
   };
 
-  // Trigger nascosto: triplo click sul sottotitolo sblocca la generazione automatica.
-  const handleSecretClick = () => {
-    if (secretTimerRef.current) {
-      window.clearTimeout(secretTimerRef.current);
-      secretTimerRef.current = null;
-    }
-    secretClicksRef.current += 1;
-    if (secretClicksRef.current >= 3) {
-      secretClicksRef.current = 0;
-      setAutoUnlocked(true);
-      return;
-    }
-    secretTimerRef.current = window.setTimeout(() => {
-      secretClicksRef.current = 0;
-    }, 1500);
-  };
-
-  useEffect(() => {
-    return () => {
-      if (secretTimerRef.current) {
-        window.clearTimeout(secretTimerRef.current);
-        secretTimerRef.current = null;
-      }
-    };
-  }, []);
-
   const statCards: { label: string; value: React.ReactNode; icon: LucideIcon; tone: string; tile: string }[] = [
     {
       label: 'Registri totali',
@@ -349,7 +326,11 @@ export default function HaccpDashboard() {
       case 'daily':
         return <HaccpForm company={companyInfo} onRecordSaved={handleRecordUpdate} />;
       case 'auto':
-        return <AutoGenerator company={companyInfo} onGenerationComplete={handleRecordUpdate} />;
+        // Funzionalità riservata al gestore: anche se la voce non è visibile,
+        // la sezione non viene mai resa per gli altri utenti.
+        return isPlatformAdmin ? (
+          <AutoGenerator company={companyInfo} onGenerationComplete={handleRecordUpdate} />
+        ) : null;
       case 'archive':
         return <RecordsList company={companyInfo} refreshTrigger={refreshTrigger} />;
       case 'ingresso':
@@ -385,8 +366,8 @@ export default function HaccpDashboard() {
         <div className="mx-auto flex h-16 max-w-7xl items-center gap-3 px-4 sm:px-6 lg:px-8">
           <div className="flex min-w-0 items-center gap-3">
             <img src="/brand/alimex_logo.svg" alt="Alimex" className="h-12 w-auto shrink-0" />
-            <p className="hidden cursor-default select-none text-xs text-muted-foreground sm:block" onClick={handleSecretClick}>
-              Gestione Automatizzata Registri
+            <p className="hidden select-none text-xs text-muted-foreground sm:block">
+              Gestionale per HACCP, tracciabilità e sicurezza alimentare
             </p>
           </div>
 
@@ -470,10 +451,10 @@ export default function HaccpDashboard() {
               <p className="mt-0.5 text-sm text-muted-foreground">{activeItem.description}</p>
             </div>
           </div>
-          {autoUnlocked && (
+          {isPlatformAdmin && (
             <Badge variant="secondary" className="gap-1.5">
               <Zap className="h-3 w-3" />
-              Modalità avanzata attiva
+              Modalità gestore
             </Badge>
           )}
         </div>
@@ -603,6 +584,23 @@ export default function HaccpDashboard() {
             {renderContent()}
           </Suspense>
         </div>
+
+        {/* Accesso rapido alle sezioni: ogni categoria è una scheda distinta e cliccabile. */}
+        {activeTab === 'cruscotto' && (
+          <section className="mt-10">
+            <div className="mb-4 flex flex-wrap items-baseline gap-x-3 gap-y-1">
+              <h3 className="text-lg font-bold tracking-tight">Tutte le sezioni</h3>
+              <p className="text-sm text-muted-foreground">
+                Apri una qualsiasi area del gestionale con un clic.
+              </p>
+            </div>
+            <CategoryGrid
+              items={navItems.filter((item) => item.key !== 'cruscotto')}
+              activeKey={activeTab}
+              onSelect={(key) => goTo(key as TabKey)}
+            />
+          </section>
+        )}
       </main>
 
       {/* ── Navigazione mobile ───────────────────────────────── */}

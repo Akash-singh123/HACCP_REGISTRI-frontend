@@ -8,13 +8,18 @@ import { Loader2 } from 'lucide-react';
 
 // Code-splitting a livello di rotta: la shell iniziale resta minima e ogni
 // percorso scarica solo il codice che gli serve davvero (il gestionale
-// completo, la landing, il login, il pannello admin o il QR allergeni).
+// completo, le pagine del sito pubblico, l'area accesso, il pannello admin
+// o il QR allergeni).
 const Index = lazy(() => import('./pages/Index'));
 const NotFound = lazy(() => import('./pages/NotFound'));
 const OsaSignature = lazy(() => import('./components/OsaSignature'));
 const AllergeniPubblico = lazy(() => import('./pages/AllergeniPubblico'));
 const Login = lazy(() => import('./pages/Login'));
-const Landing = lazy(() => import('./pages/Landing'));
+const Registrati = lazy(() => import('./pages/Registrati'));
+const Attiva = lazy(() => import('./pages/Attiva'));
+const Homepage = lazy(() => import('./pages/Home'));
+const Funzionalita = lazy(() => import('./pages/Funzionalita'));
+const Prezzi = lazy(() => import('./pages/Prezzi'));
 const AdminClienti = lazy(() => import('./pages/AdminClienti'));
 const AdminOsservabilita = lazy(() => import('./pages/AdminOsservabilita'));
 const LicenseBlocked = lazy(() => import('./components/LicenseBlocked'));
@@ -55,7 +60,7 @@ function PlatformAdminOnly({ children }: { children: React.ReactNode }) {
 }
 
 /** Il gestore senza azienda viene indirizzato al pannello clienti. */
-function Home() {
+function DashboardHome() {
   const { company, isPlatformAdmin, loading } = useAuth();
   if (loading) return <FullScreenLoader />;
   if (!company && isPlatformAdmin) return <Navigate to="/admin" replace />;
@@ -63,16 +68,16 @@ function Home() {
 }
 
 /**
- * Voce pubblica del sito: chi non ha effettuato l'accesso vede la landing
+ * Voce pubblica del sito: chi non ha effettuato l'accesso vede la homepage
  * commerciale, mentre gli utenti autenticati entrano direttamente nel gestionale.
  */
 function HomeRoute() {
   const { user, loading } = useAuth();
   if (loading) return <FullScreenLoader />;
-  if (!user) return <Landing />;
+  if (!user) return <Homepage />;
   return (
     <LicenseGate>
-      <Home />
+      <DashboardHome />
     </LicenseGate>
   );
 }
@@ -86,6 +91,10 @@ const App = () => (
           <Suspense fallback={<FullScreenLoader />}>
             <Routes>
               <Route path="/login" element={<Login />} />
+              <Route path="/registrati" element={<Registrati />} />
+              <Route path="/attiva" element={<Attiva />} />
+              <Route path="/funzionalita" element={<Funzionalita />} />
+              <Route path="/prezzi" element={<Prezzi />} />
               <Route path="/allergeni" element={<AllergeniPubblico />} />
               <Route path="/admin" element={<PlatformAdminOnly><AdminClienti /></PlatformAdminOnly>} />
               <Route path="/admin/osservabilita" element={<PlatformAdminOnly><AdminOsservabilita /></PlatformAdminOnly>} />

@@ -29,6 +29,21 @@ function requireWrite(ctx: GuardContext, roles: string[] = ['owner', 'admin', 's
   }
 }
 
+/**
+ * Verifica che l'utente sia un amministratore di piattaforma (gestore).
+ * La generazione massiva dei registri è riservata a questo ruolo: il controllo
+ * è ripetuto qui perché il client è considerato non attendibile.
+ */
+async function requirePlatformAdmin(ctx: GuardContext): Promise<void> {
+  const { data, error } = await ctx.admin
+    .from('platform_admins')
+    .select('user_id')
+    .eq('user_id', ctx.user.id)
+    .maybeSingle();
+  if (error) throw new HttpError(500, 'Errore verifica permessi', 'db_error');
+  if (!data) throw new HttpError(403, 'Generazione automatica riservata al gestore', 'not_platform_admin');
+}
+
 interface RecordRow {
   record_date: string;
   temperatures: unknown;
@@ -50,6 +65,41 @@ function mapRecord(r: RecordRow) {
     createdAt: r.created_at,
     updatedAt: r.updated_at ?? r.created_at,
   };
+}
+
+/**
+ * Scrive in blocco un elenco di registri giornalieri per l'azienda indicata.
+ * L'upsert è idempotente sulla chiave (azienda, data). Ritorna il numero di righe.
+ */
+async function bulkUpsertRecords(ctx: GuardContext, list: Record<string, unknown>[]): Promise<number> {
+  if (!list.length) return 0;
+  if (list.length > 500) throw new HttpError(400, 'Troppi registri in una sola richiesta', 'too_many');
+
+  const now = new Date().toISOString();
+  const rows: Record<string, unknown>[] = [];
+  for (const item of list) {
+    const date = String(item.date ?? '').trim();
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+      throw new HttpError(400, `Data non valida: ${date}`, 'bad_date');
+    }
+    rows.push({
+      company_id: ctx.companyId,
+      type: 'daily',
+      title: `Registro ${date}`,
+      record_date: date,
+      temperatures: item.temperatures ?? null,
+      cleaning: item.cleaning ?? null,
+      notes: item.notes ? String(item.notes).slice(0, MAX_NOTES) : null,
+      signature: item.signature ? String(item.signature) : null,
+      updated_at: now,
+    });
+  }
+
+  const { error } = await ctx.admin
+    .from('haccp_records')
+    .upsert(rows, { onConflict: 'company_id,record_date' });
+  if (error) throw new HttpError(500, 'Errore salvataggio registri', 'db_error');
+  return rows.length;
 }
 
 Deno.serve(async (req: Request) => {
@@ -121,35 +171,23 @@ Deno.serve(async (req: Request) => {
         requireWrite(ctx);
 
         const list = Array.isArray(body.records) ? (body.records as Record<string, unknown>[]) : [];
-        if (!list.length) return json({ saved: 0 });
-        if (list.length > 500) throw new HttpError(400, 'Troppi registri in una sola richiesta', 'too_many');
+        const saved = await bulkUpsertRecords(ctx, list);
+        if (saved) await audit(ctx, 'record.upsertMany', 'haccp_records', String(saved));
+        return json({ saved });
+      }
 
-        const now = new Date().toISOString();
-        const rows: Record<string, unknown>[] = [];
-        for (const item of list) {
-          const date = String(item.date ?? '').trim();
-          if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
-            throw new HttpError(400, `Data non valida: ${date}`, 'bad_date');
-          }
-          rows.push({
-            company_id: ctx.companyId,
-            type: 'daily',
-            title: `Registro ${date}`,
-            record_date: date,
-            temperatures: item.temperatures ?? null,
-            cleaning: item.cleaning ?? null,
-            notes: item.notes ? String(item.notes).slice(0, MAX_NOTES) : null,
-            signature: item.signature ? String(item.signature) : null,
-            updated_at: now,
-          });
-        }
+      // Generazione massiva dei registri: riservata al gestore dell'applicazione.
+      // A differenza di records.upsertMany (usata anche dalla sincronizzazione
+      // offline dei registri giornalieri) questa azione richiede i privilegi di
+      // amministratore di piattaforma, verificati qui e non solo nel client.
+      case 'records.generateRange': {
+        await assertFeature(ctx, 'haccp');
+        await requirePlatformAdmin(ctx);
 
-        const { error } = await ctx.admin
-          .from('haccp_records')
-          .upsert(rows, { onConflict: 'company_id,record_date' });
-        if (error) throw new HttpError(500, 'Errore salvataggio registri', 'db_error');
-        await audit(ctx, 'record.upsertMany', 'haccp_records', String(rows.length));
-        return json({ saved: rows.length });
+        const list = Array.isArray(body.records) ? (body.records as Record<string, unknown>[]) : [];
+        const saved = await bulkUpsertRecords(ctx, list);
+        if (saved) await audit(ctx, 'record.generateRange', 'haccp_records', String(saved));
+        return json({ saved });
       }
 
       case 'records.deleteByDate': {

@@ -737,6 +737,9 @@ export const api = {
         call<{ record: HaccpRecord }>('haccp-data', { action: 'records.upsert', ...payload }, companyId),
       upsertMany: (companyId: string, records: RecordUpsertPayload[]) =>
         call<{ saved: number }>('haccp-data', { action: 'records.upsertMany', records }, companyId),
+      // Generazione massiva riservata al gestore dell'applicazione (verificata lato server).
+      generateRange: (companyId: string, records: RecordUpsertPayload[]) =>
+        call<{ saved: number }>('haccp-data', { action: 'records.generateRange', records }, companyId),
       deleteByDate: (companyId: string, date: string) =>
         call<{ ok: boolean }>('haccp-data', { action: 'records.deleteByDate', date }, companyId),
       deleteByMonth: (companyId: string, year: number, month: number) =>
@@ -912,6 +915,7 @@ export const activeData = {
     list: () => api.data.records.list(requireCompany()),
     upsert: (payload: RecordUpsertPayload) => api.data.records.upsert(requireCompany(), payload),
     upsertMany: (records: RecordUpsertPayload[]) => api.data.records.upsertMany(requireCompany(), records),
+    generateRange: (records: RecordUpsertPayload[]) => api.data.records.generateRange(requireCompany(), records),
     deleteByDate: (date: string) => api.data.records.deleteByDate(requireCompany(), date),
     deleteByMonth: (year: number, month: number) => api.data.records.deleteByMonth(requireCompany(), year, month),
     deleteAll: () => api.data.records.deleteAll(requireCompany()),

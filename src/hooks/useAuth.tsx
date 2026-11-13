@@ -37,6 +37,10 @@ interface AuthContextValue {
   signIn: (email: string, password: string) => Promise<void>;
   signOut: () => Promise<void>;
   refreshCompany: () => Promise<void>;
+  /** Invia l'email di recupero password all'indirizzo indicato. */
+  resetPassword: (email: string) => Promise<void>;
+  /** Imposta una nuova password per l'utente attualmente autenticato. */
+  updatePassword: (password: string) => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
@@ -243,6 +247,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setActiveCompany(null);
       },
       refreshCompany: () => resolveCompany(),
+      resetPassword: async (email) => {
+        const redirectTo = `${window.location.origin}/login`;
+        const { error } = await supabase.auth.resetPasswordForEmail(email, { redirectTo });
+        if (error) throw new Error(error.message);
+      },
+      updatePassword: async (password) => {
+        const { error } = await supabase.auth.updateUser({ password });
+        if (error) throw new Error(error.message);
+      },
     }),
     [session, company, role, isPlatformAdmin, loading, license, licenseLoading, resolveCompany]
   );
