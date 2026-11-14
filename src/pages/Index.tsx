@@ -107,6 +107,10 @@ export default function HaccpDashboard() {
   const [showSettings, setShowSettings] = useState(false);
   const [activeTab, setActiveTab] = useState<TabKey>('cruscotto');
   const [pestToken, setPestToken] = useState<string | null>(null);
+  // Deep-link puntuale: elemento da evidenziare nella sezione di destinazione
+  // (es. un lotto specifico aperto dal centro notifiche). `nonce` forza il
+  // ri-scroll anche quando si tocca due volte lo stesso avviso.
+  const [focusTarget, setFocusTarget] = useState<{ id: string; nonce: number } | null>(null);
   const [stats, setStats] = useState<{ total: number; thisMonth: number; thisYear: number; lastRecord: string | null }>({
     total: 0,
     thisMonth: 0,
@@ -302,8 +306,12 @@ export default function HaccpDashboard() {
     setRefreshTrigger((prev) => prev + 1);
   };
 
-  const goTo = (key: TabKey) => {
+  // Naviga a una sezione. Se viene fornito `focusId`, la sezione di
+  // destinazione evidenzia e porta in vista quel singolo elemento (deep-link
+  // puntuale dal centro notifiche).
+  const goTo = (key: TabKey, focusId?: string | null) => {
     setActiveTab(key);
+    setFocusTarget(focusId ? { id: focusId, nonce: Date.now() } : null);
   };
 
   const statCards: { label: string; value: React.ReactNode; icon: LucideIcon; tone: string; tile: string }[] = [
@@ -360,11 +368,11 @@ export default function HaccpDashboard() {
       case 'archive':
         return <RecordsList company={companyInfo} refreshTrigger={refreshTrigger} />;
       case 'ingresso':
-        return <IncomingFoods />;
+        return <IncomingFoods focusId={focusTarget?.id ?? null} focusNonce={focusTarget?.nonce ?? 0} />;
       case 'cloud':
         return <DocumentsArchive />;
       case 'semilavorati':
-        return <Semilavorati />;
+        return <Semilavorati focusId={focusTarget?.id ?? null} focusNonce={focusTarget?.nonce ?? 0} />;
       case 'firma-osa':
         return <OsaSignature />;
       case 'allergeni':
@@ -413,7 +421,7 @@ export default function HaccpDashboard() {
             </div>
             <NotificationCenter
               companyId={authCompany?.id ?? null}
-              onNavigate={(tab) => goTo(tab as TabKey)}
+              onNavigate={(tab, entityId) => goTo(tab as TabKey, entityId)}
             />
             <Button
               variant={showSettings ? 'secondary' : 'ghost'}

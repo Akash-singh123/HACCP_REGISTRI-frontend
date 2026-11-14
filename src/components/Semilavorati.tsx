@@ -13,6 +13,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSepara
 import { Separator } from '@/components/ui/separator';
 import { useConfirm } from '@/components/ConfirmDialog';
 import { ConsumeLotDialog } from '@/components/ConsumeLotDialog';
+import { StockAuditDialog } from '@/components/StockAuditDialog';
 import { toast } from 'sonner';
 import { activeDocs, activePrinting, findEarlierFefoLot, pickFefoLot, readExpiryRules, resolveExpiryRule, type ConsumableLot, type LabelPayload, type PrintJob, type SemiProductBatch, type StockStatus } from '@/lib/api';
 import { newIdempotencyKey, printLabel, printQueue, printerRegistry, usePrintersStore } from '@/printing';
@@ -28,6 +29,7 @@ import {
   ChefHat,
   Cloud,
   Download,
+  History,
   Info,
   ListChecks,
   Loader2,
@@ -150,7 +152,15 @@ const schema = z.object({
   ingredienti: z.array(ingredientSchema).min(1),
 });
 
-export default function Semilavorati() {
+export default function Semilavorati({
+  focusId = null,
+  focusNonce = 0,
+}: {
+  /** Deep-link puntuale: id del lotto da evidenziare (dal centro notifiche). */
+  focusId?: string | null;
+  /** Cambia a ogni richiesta di focus, per ri-scorrere anche sullo stesso id. */
+  focusNonce?: number;
+} = {}) {
   const {
     templates,
     categories,
@@ -194,6 +204,10 @@ export default function Semilavorati() {
 
   // --- Lotti di produzione: filtro di stato e registrazione del consumo ---
   const [batchFilter, setBatchFilter] = useState<BatchFilter>('attivi');
+  // Lotto temporaneamente evidenziato dopo un deep-link dal centro notifiche.
+  const [highlightId, setHighlightId] = useState<string | null>(null);
+  // Storico dell'archiviazione dei lotti (audit trail).
+  const [auditOpen, setAuditOpen] = useState(false);
   const [consumeState, setConsumeState] = useState<{ open: boolean; batch?: SemiProductBatch }>({ open: false });
 
   useEffect(() => { load(); }, [load]);
@@ -244,6 +258,28 @@ export default function Semilavorati() {
     () => batches.filter((b) => matchesBatchFilter(b, batchFilter, warnDaysFor(b))),
     [batches, batchFilter, warnDaysFor],
   );
+
+  // Deep-link puntuale dal centro notifiche: imposta il filtro che rende
+  // visibile il lotto collegato e lo evidenzia.
+  useEffect(() => {
+    if (!focusId) return;
+    const batch = batches.find((b) => b.id === focusId);
+    if (!batch) return;
+    const stato = batch.stato ?? 'active';
+    setBatchFilter(stato === 'archived' ? 'archiviati' : stato === 'discarded' ? 'scartati' : 'attivi');
+    setHighlightId(focusId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [focusId, focusNonce, batches]);
+
+  // Scorre al lotto evidenziato e rimuove l'evidenziazione dopo qualche istante.
+  useEffect(() => {
+    if (!highlightId) return;
+    const el = document.querySelector<HTMLElement>(`[data-stock-id="${highlightId}"]`);
+    if (!el) return;
+    el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    const timer = window.setTimeout(() => setHighlightId(null), 2600);
+    return () => window.clearTimeout(timer);
+  }, [highlightId, visibleBatches]);
 
   /**
    * FEFO: per ogni prodotto, l'id della partita da usare per prima (attiva, non
@@ -1388,10 +1424,16 @@ export default function Semilavorati() {
                   </span>
                 )}
               </div>
-              <Button variant="ghost" size="sm" onClick={() => void loadBatches()}>
-                <RotateCcw className="h-4 w-4" />
-                Aggiorna
-              </Button>
+              <div className="flex items-center gap-1">
+                <Button variant="ghost" size="sm" onClick={() => setAuditOpen(true)}>
+                  <History className="h-4 w-4" />
+                  Storico archiviazione
+                </Button>
+                <Button variant="ghost" size="sm" onClick={() => void loadBatches()}>
+                  <RotateCcw className="h-4 w-4" />
+                  Aggiorna
+                </Button>
+              </div>
             </div>
 
             <div className="flex flex-wrap items-center gap-2">
@@ -1437,7 +1479,14 @@ export default function Semilavorati() {
                     const expired = days !== null && days < 0;
                     const qty = formatBatchQuantity(b);
                     return (
-                      <div key={b.id} className="flex flex-wrap items-center gap-3 px-3 py-2.5">
+                      <div
+                        key={b.id}
+                        data-stock-id={b.id}
+                        className={cn(
+                          'flex flex-wrap items-center gap-3 px-3 py-2.5 transition-colors',
+                          highlightId === b.id && 'bg-primary/10 ring-1 ring-inset ring-primary/50',
+                        )}
+                      >
                         <div className="min-w-0 flex-1">
                           <div className="flex flex-wrap items-center gap-2">
                             <p className="truncate text-sm font-medium">{b.prodotto}</p>
@@ -1787,6 +1836,9 @@ export default function Semilavorati() {
         onOpenChange={(open) => { if (!open) setReprintJob(null); }}
         job={reprintJob}
       />
+
+      {/* Storico dell'archiviazione dei lotti (audit trail). */}
+      <StockAuditDialog open={auditOpen} onOpenChange={setAuditOpen} defaultScope="semi_product_batches" />
 
       {confirmDialog}
     </div>

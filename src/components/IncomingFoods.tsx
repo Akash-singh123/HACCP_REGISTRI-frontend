@@ -15,6 +15,7 @@ import {
   Camera,
   CalendarClock,
   Download,
+  History,
   MoreVertical,
   Package,
   PackageOpen,
@@ -33,6 +34,7 @@ import { Command, CommandInput, CommandList, CommandEmpty, CommandGroup, Command
 import { DOC_FOLDERS, readTextFile, writeTextFile } from '@/lib/docs';
 import BarcodeScannerDialog from '@/components/BarcodeScannerDialog';
 import LabelScanDialog from '@/components/LabelScanDialog';
+import { StockAuditDialog } from '@/components/StockAuditDialog';
 import { useConfirm } from '@/components/ConfirmDialog';
 import { ConsumeLotDialog } from '@/components/ConsumeLotDialog';
 import { useAuth } from '@/hooks/useAuth';
@@ -121,7 +123,15 @@ function itemToLot(it: IncomingFood): ConsumableLot {
   };
 }
 
-export default function IncomingFoods() {
+export default function IncomingFoods({
+  focusId = null,
+  focusNonce = 0,
+}: {
+  /** Deep-link puntuale: id dell'alimento da evidenziare (dal centro notifiche). */
+  focusId?: string | null;
+  /** Cambia a ogni richiesta di focus, per ri-scorrere anche sullo stesso id. */
+  focusNonce?: number;
+} = {}) {
   const { items, addItem, updateItem, setStatus, consumeItem, load } = useIncomingFoodsStore();
   const { templates, load: loadSemi } = useSemiProductsStore();
   const { company } = useAuth();
@@ -133,6 +143,10 @@ export default function IncomingFoods() {
   const [scannerOpen, setScannerOpen] = useState(false);
   const [labelOpen, setLabelOpen] = useState(false);
   const [statusFilter, setStatusFilter] = useState<StockFilter>('attivi');
+  // Elemento temporaneamente evidenziato dopo un deep-link.
+  const [highlightId, setHighlightId] = useState<string | null>(null);
+  // Storico dell'archiviazione delle scorte (audit trail).
+  const [auditOpen, setAuditOpen] = useState(false);
   // Registrazione del consumo di una scorta (blocco scaduti + FEFO).
   const [consumeState, setConsumeState] = useState<{ open: boolean; item?: IncomingFood }>({ open: false });
 
@@ -166,6 +180,31 @@ export default function IncomingFoods() {
     () => items.filter((item) => matchesFilter(item, statusFilter, warnDaysFor(item))),
     [items, statusFilter, warnDaysFor],
   );
+
+  // Deep-link puntuale dal centro notifiche: imposta il filtro che rende
+  // visibile l'elemento collegato e lo evidenzia.
+  useEffect(() => {
+    if (!focusId) return;
+    const item = items.find((x) => x.id === focusId);
+    if (!item) return;
+    const stato = item.stato ?? 'active';
+    setStatusFilter(stato === 'archived' ? 'archiviati' : stato === 'discarded' ? 'scartati' : 'attivi');
+    setHighlightId(focusId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [focusId, focusNonce, items]);
+
+  // Scorre all'elemento evidenziato (vista visibile, desktop o mobile) e
+  // rimuove l'evidenziazione dopo qualche istante.
+  useEffect(() => {
+    if (!highlightId) return;
+    const el = Array.from(document.querySelectorAll<HTMLElement>(`[data-stock-id="${highlightId}"]`)).find(
+      (node) => node.offsetParent !== null,
+    );
+    if (!el) return;
+    el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    const timer = window.setTimeout(() => setHighlightId(null), 2600);
+    return () => window.clearTimeout(timer);
+  }, [highlightId, visibleItems]);
 
   /**
    * FEFO: per ogni alimento, l'id della partita da usare per prima (attiva, non
@@ -649,6 +688,9 @@ export default function IncomingFoods() {
               </div>
             </div>
             <div className="flex flex-wrap gap-2">
+              <Button variant="outline" onClick={() => setAuditOpen(true)}>
+                <History className="mr-2 h-4 w-4" /> Storico archiviazione
+              </Button>
               <Button variant="outline" onClick={saveRegistry}>
                 <Upload className="mr-2 h-4 w-4" /> Salva registro
               </Button>
@@ -718,7 +760,14 @@ export default function IncomingFoods() {
                     const expired = days !== null && days < 0;
                     const stato = it.stato ?? 'active';
                     return (
-                      <TableRow key={it.id} className={cn(editId === it.id && 'bg-primary/5')}>
+                      <TableRow
+                        key={it.id}
+                        data-stock-id={it.id}
+                        className={cn(
+                          editId === it.id && 'bg-primary/5',
+                          highlightId === it.id && 'bg-primary/10 ring-1 ring-inset ring-primary/50',
+                        )}
+                      >
                         <TableCell className="font-medium">
                           <div className="flex items-center gap-2">
                             <span>{it.nome}</span>
@@ -774,7 +823,15 @@ export default function IncomingFoods() {
                 const expired = days !== null && days < 0;
                 const stato = it.stato ?? 'active';
                 return (
-                  <div key={it.id} className={cn('rounded-xl border bg-card p-4', editId === it.id && 'ring-1 ring-primary/40')}>
+                  <div
+                    key={it.id}
+                    data-stock-id={it.id}
+                    className={cn(
+                      'rounded-xl border bg-card p-4 transition-colors',
+                      editId === it.id && 'ring-1 ring-primary/40',
+                      highlightId === it.id && 'bg-primary/10 ring-2 ring-primary/60',
+                    )}
+                  >
                     <div className="flex items-start justify-between gap-2">
                       <div className="min-w-0">
                         <p className="truncate font-semibold">{it.nome}</p>
@@ -845,6 +902,9 @@ export default function IncomingFoods() {
         fefoAlternative={consumeFefoAlternative}
         onConfirm={submitConsumption}
       />
+
+      {/* Storico dell'archiviazione delle scorte (audit trail). */}
+      <StockAuditDialog open={auditOpen} onOpenChange={setAuditOpen} defaultScope="incoming_foods" />
 
       {confirmDialog}
     </div>

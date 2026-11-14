@@ -245,6 +245,38 @@ export interface IncomingConsumeResult {
   stato: StockStatus;
 }
 
+// ── Registro (audit trail) dell'archiviazione delle scorte ─────────────────
+
+/**
+ * Azioni tracciate nel registro dell'archiviazione. Le stesse azioni sono
+ * scritte dal backend (Edge Function `haccp-data` e funzione SQL
+ * `archive_expired_stock`): la convenzione è `stock.<operazione>.<origine>`.
+ */
+export type StockAuditAction =
+  | 'stock.archive.manual'
+  | 'stock.archive.auto'
+  | 'stock.archive.consumed'
+  | 'stock.discard.manual'
+  | 'stock.restore.manual'
+  | 'stock.consume';
+
+/** Origine di una modifica: utente oppure sistema (job automatico). */
+export type StockAuditSource = 'user' | 'auto';
+
+/** Voce del registro dell'archiviazione e degli scarti. */
+export interface StockAuditEntry {
+  id: string;
+  action: string;
+  /** Tabella di dominio interessata ('incoming_foods' | 'semi_product_batches'). */
+  entity: string | null;
+  entityId: string | null;
+  userId: string | null;
+  /** Nome leggibile dell'autore ('Sistema' per le archiviazioni automatiche). */
+  userName: string | null;
+  meta: Record<string, unknown>;
+  createdAt: string;
+}
+
 // ── Regole di scadenza configurabili per azienda ───────────────────────────
 // La logica vive nel modulo puro `@/lib/expiryRules` (nessuna dipendenza dal
 // client): qui la ri-esportiamo per mantenere validi i punti di import esistenti
@@ -910,6 +942,11 @@ export const api = {
           call<{ item: SemiProductBatch }>('haccp-data', { action: 'semi.batches.consume', ...payload }, companyId),
       },
     },
+    // Registro dell'archiviazione e degli scarti delle scorte (audit trail).
+    stock: {
+      audit: (companyId: string, params?: { entity?: 'incoming_foods' | 'semi_product_batches'; limit?: number }) =>
+        call<{ items: StockAuditEntry[] }>('haccp-data', { action: 'stock.audit', ...params }, companyId),
+    },
     equipment: {
       list: (companyId: string) =>
         call<{ equipment: Equipment[] }>('haccp-data', { action: 'equipment.list' }, companyId),
@@ -1086,6 +1123,10 @@ export const activeData = {
       update: (payload: SemiProductBatchPatch) => api.data.semi.batches.update(requireCompany(), payload),
       consume: (payload: ConsumePayload) => api.data.semi.batches.consume(requireCompany(), payload),
     },
+  },
+  stock: {
+    audit: (params?: { entity?: 'incoming_foods' | 'semi_product_batches'; limit?: number }) =>
+      api.data.stock.audit(requireCompany(), params),
   },
   equipment: {
     list: () => api.data.equipment.list(requireCompany()),

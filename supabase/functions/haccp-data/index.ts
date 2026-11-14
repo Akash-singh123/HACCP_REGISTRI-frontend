@@ -203,6 +203,18 @@ function computeConsumption(
   return { remaining, empties: remaining <= 0 };
 }
 
+/**
+ * Azione del registro di archiviazione corrispondente allo stato di
+ * destinazione. Usata per tracciare in modo uniforme archiviazioni, scarti e
+ * ripristini (audit trail consultabile con l'azione 'stock.audit').
+ */
+function stockStatusAction(stato: string): string {
+  if (stato === 'archived') return 'stock.archive.manual';
+  if (stato === 'discarded') return 'stock.discard.manual';
+  if (stato === 'active') return 'stock.restore.manual';
+  return 'stock.update';
+}
+
 
 /**
  * Scrive in blocco un elenco di registri giornalieri per l'azienda indicata.
@@ -488,12 +500,21 @@ Deno.serve(async (req: Request) => {
           })
           .eq('id', id)
           .eq('company_id', ctx.companyId)
-          .select('id')
+          .select('id, name, lot')
           .maybeSingle();
         if (error) throw new HttpError(500, 'Errore aggiornamento stato', 'db_error');
         if (!data) throw new HttpError(404, 'Voce non trovata', 'not_found');
-        await audit(ctx, `incoming.setStatus.${stato}`, 'incoming_foods', id);
-        return json({ id: data.id, stato });
+        const voce = data as { id: string; name: string; lot: string | null };
+        // Audit trail: archiviazione/scarto/ripristino con autore e motivo.
+        await audit(ctx, stockStatusAction(stato), 'incoming_foods', id, {
+          source: 'user',
+          kind: 'incoming',
+          status: stato,
+          reason: 'manual',
+          label: voce.name,
+          lot: voce.lot,
+        });
+        return json({ id: voce.id, stato });
       }
 
       case 'incoming.delete': {
@@ -521,7 +542,7 @@ Deno.serve(async (req: Request) => {
 
         const { data: row, error } = await ctx.admin
           .from('incoming_foods')
-          .select('id, expiry_date, status, quantity_initial, quantity_remaining')
+          .select('id, name, lot, expiry_date, status, quantity_initial, quantity_remaining')
           .eq('id', id)
           .eq('company_id', ctx.companyId)
           .maybeSingle();
@@ -548,7 +569,24 @@ Deno.serve(async (req: Request) => {
           .maybeSingle();
         if (upErr) throw new HttpError(500, 'Errore aggiornamento consumo', 'db_error');
         if (!data) throw new HttpError(404, 'Voce non trovata', 'not_found');
-        await audit(ctx, 'incoming.consume', 'incoming_foods', id);
+        await audit(ctx, 'stock.consume', 'incoming_foods', id, {
+          source: 'user',
+          kind: 'incoming',
+          consumed,
+          remaining,
+          label: row.name,
+          lot: row.lot,
+        });
+        // Se il consumo esaurisce la scorta e la archivia, lo si traccia a parte.
+        if (archiveIfEmpty && empties) {
+          await audit(ctx, 'stock.archive.consumed', 'incoming_foods', id, {
+            source: 'user',
+            kind: 'incoming',
+            reason: 'consumed',
+            label: row.name,
+            lot: row.lot,
+          });
+        }
         return json({
           id: data.id,
           quantitaResidua: data.quantity_remaining ?? remaining,
@@ -685,8 +723,22 @@ Deno.serve(async (req: Request) => {
           .maybeSingle();
         if (error) throw new HttpError(500, 'Errore aggiornamento lotto', 'db_error');
         if (!data) throw new HttpError(404, 'Lotto non trovato', 'not_found');
-        await audit(ctx, 'semi.batch.update', 'semi_product_batches', id);
-        return json({ item: mapBatch(data as BatchRow) });
+        const lotto = data as BatchRow;
+        // Audit trail: archiviazioni, scarti e ripristini tracciati con motivo.
+        await audit(
+          ctx,
+          stato ? stockStatusAction(stato) : 'semi.batch.update',
+          'semi_product_batches',
+          id,
+          {
+            source: 'user',
+            kind: 'semi',
+            ...(stato ? { status: stato, reason: 'manual' } : {}),
+            label: lotto.product_name,
+            lot: lotto.lot,
+          },
+        );
+        return json({ item: mapBatch(lotto) });
       }
 
       // Consumo residuo di un lotto semilavorato: riduce `quantity_remaining`
@@ -699,7 +751,7 @@ Deno.serve(async (req: Request) => {
 
         const { data: row, error } = await ctx.admin
           .from('semi_product_batches')
-          .select('id, expiry_date, status, quantity_initial, quantity_remaining')
+          .select('id, product_name, lot, expiry_date, status, quantity_initial, quantity_remaining')
           .eq('id', id)
           .eq('company_id', ctx.companyId)
           .maybeSingle();
@@ -729,7 +781,24 @@ Deno.serve(async (req: Request) => {
           .maybeSingle();
         if (upErr) throw new HttpError(500, 'Errore aggiornamento consumo lotto', 'db_error');
         if (!data) throw new HttpError(404, 'Lotto non trovato', 'not_found');
-        await audit(ctx, 'semi.batch.consume', 'semi_product_batches', id);
+        await audit(ctx, 'stock.consume', 'semi_product_batches', id, {
+          source: 'user',
+          kind: 'semi',
+          consumed,
+          remaining,
+          label: row.product_name,
+          lot: row.lot,
+        });
+        // Se il consumo esaurisce il lotto e lo archivia, lo si traccia a parte.
+        if (archiveIfEmpty && empties) {
+          await audit(ctx, 'stock.archive.consumed', 'semi_product_batches', id, {
+            source: 'user',
+            kind: 'semi',
+            reason: 'consumed',
+            label: row.product_name,
+            lot: row.lot,
+          });
+        }
         return json({ item: mapBatch(data as BatchRow) });
       }
 
@@ -814,6 +883,74 @@ Deno.serve(async (req: Request) => {
         if (error) throw new HttpError(500, 'Errore eliminazione attrezzatura', 'db_error');
         await audit(ctx, 'equipment.delete', 'company_equipment', id);
         return json({ ok: true });
+      }
+
+      // ------------------------------------------------ STOCK AUDIT TRAIL
+      // Storico dell'archiviazione delle scorte (chi, cosa, quando, perché),
+      // letto dall'audit log dell'azienda. Comprende sia le archiviazioni
+      // manuali sia quelle automatiche del job di scadenza (source: 'auto').
+      case 'stock.audit': {
+        await assertFeature(ctx, 'allergeni');
+        if (ctx.role === 'viewer') {
+          throw new HttpError(403, 'Permessi insufficienti per consultare lo storico', 'forbidden_role');
+        }
+        const limit = Math.min(Math.max(Number(body.limit) || 100, 1), 200);
+        const entity = typeof body.entity === 'string' ? body.entity : '';
+        if (entity && entity !== 'incoming_foods' && entity !== 'semi_product_batches') {
+          throw new HttpError(400, 'Entità non valida', 'bad_entity');
+        }
+
+        let query = ctx.admin
+          .from('audit_log')
+          .select('id, action, entity, entity_id, user_id, meta, created_at')
+          .eq('company_id', ctx.companyId)
+          .like('action', 'stock.%')
+          .order('created_at', { ascending: false })
+          .limit(limit);
+        if (entity) query = query.eq('entity', entity);
+
+        const { data, error } = await query;
+        if (error) throw new HttpError(500, 'Errore lettura storico scorte', 'db_error');
+
+        const rows = (data ?? []) as Array<{
+          id: number;
+          action: string;
+          entity: string | null;
+          entity_id: string | null;
+          user_id: string | null;
+          meta: Record<string, unknown> | null;
+          created_at: string;
+        }>;
+
+        // Risolve il nome dell'utente una volta per ogni utente distinto.
+        // Le voci automatiche non hanno autore: vengono mostrate come "Sistema".
+        const userIds = [...new Set(rows.map((r) => r.user_id).filter((v): v is string => Boolean(v)))];
+        const nameById = new Map<string, string>();
+        await Promise.all(
+          userIds.map(async (uid) => {
+            try {
+              const { data: u } = await ctx.admin.auth.admin.getUserById(uid);
+              const md = (u?.user?.user_metadata ?? {}) as Record<string, unknown>;
+              const full = String(md.full_name ?? md.name ?? '').trim();
+              nameById.set(uid, full || u?.user?.email || 'Utente');
+            } catch {
+              nameById.set(uid, 'Utente');
+            }
+          }),
+        );
+
+        return json({
+          items: rows.map((r) => ({
+            id: String(r.id),
+            action: r.action,
+            entity: r.entity,
+            entityId: r.entity_id,
+            userId: r.user_id,
+            userName: r.user_id ? nameById.get(r.user_id) ?? 'Utente' : 'Sistema',
+            meta: r.meta ?? {},
+            createdAt: r.created_at,
+          })),
+        });
       }
 
       default:

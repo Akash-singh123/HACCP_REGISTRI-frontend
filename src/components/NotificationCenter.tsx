@@ -72,7 +72,9 @@ export function NotificationCenter({
   onNavigate,
 }: {
   companyId: string | null;
-  onNavigate?: (tab: string) => void;
+  /** Apre la sezione dell'avviso; se disponibile passa l'elemento collegato
+   * (deep-link puntuale, es. il lotto specifico). */
+  onNavigate?: (tab: string, entityId?: string | null) => void;
 }) {
   const [open, setOpen] = useState(false);
   const [data, setData] = useState<AlertListResult | null>(null);
@@ -141,7 +143,9 @@ export function NotificationCenter({
 
   const openAlert = (alert: AlertItem) => {
     const tab = CATEGORY_TAB[alert.category];
-    if (tab && onNavigate) onNavigate(tab);
+    // Deep-link puntuale: l'id dell'elemento collegato (per lotti e
+    // semilavorati) viene propagato per evidenziarlo nella sezione di destinazione.
+    if (tab && onNavigate) onNavigate(tab, alert.entityId);
     setOpen(false);
   };
 
