@@ -16,12 +16,14 @@ import {
   CalendarClock,
   Download,
   MoreVertical,
+  Package,
   PackageOpen,
   PackageX,
   Pencil,
   Plus,
   Save,
   ScanLine,
+  Sparkles,
   Truck,
   Upload,
 } from 'lucide-react';
@@ -32,8 +34,9 @@ import { DOC_FOLDERS, readTextFile, writeTextFile } from '@/lib/docs';
 import BarcodeScannerDialog from '@/components/BarcodeScannerDialog';
 import LabelScanDialog from '@/components/LabelScanDialog';
 import { useConfirm } from '@/components/ConfirmDialog';
+import { ConsumeLotDialog } from '@/components/ConsumeLotDialog';
 import { useAuth } from '@/hooks/useAuth';
-import { readExpiryRules, resolveExpiryRule, type StockStatus } from '@/lib/api';
+import { findEarlierFefoLot, pickFefoLot, readExpiryRules, resolveExpiryRule, type ConsumableLot, type StockStatus } from '@/lib/api';
 import { parseBarcode } from '@/lib/barcode';
 import { cn } from '@/lib/utils';
 
@@ -104,8 +107,22 @@ const STATUS_BADGE: Record<StockStatus, { label: string; className: string }> = 
   discarded: { label: 'Scartato', className: 'border-destructive/30 bg-destructive/10 text-destructive' },
 };
 
+/** Vista consumabile di un alimento in ingresso (consumo e FEFO). */
+function itemToLot(it: IncomingFood): ConsumableLot {
+  return {
+    id: it.id,
+    label: it.nome,
+    lot: it.lotto,
+    expiryDate: it.dataScadenza ?? null,
+    remaining: it.quantitaResidua ?? null,
+    initial: it.quantita ?? null,
+    unit: it.unita,
+    status: it.stato ?? 'active',
+  };
+}
+
 export default function IncomingFoods() {
-  const { items, addItem, updateItem, setStatus, load } = useIncomingFoodsStore();
+  const { items, addItem, updateItem, setStatus, consumeItem, load } = useIncomingFoodsStore();
   const { templates, load: loadSemi } = useSemiProductsStore();
   const { company } = useAuth();
   const { confirm, confirmDialog } = useConfirm();
@@ -116,6 +133,8 @@ export default function IncomingFoods() {
   const [scannerOpen, setScannerOpen] = useState(false);
   const [labelOpen, setLabelOpen] = useState(false);
   const [statusFilter, setStatusFilter] = useState<StockFilter>('attivi');
+  // Registrazione del consumo di una scorta (blocco scaduti + FEFO).
+  const [consumeState, setConsumeState] = useState<{ open: boolean; item?: IncomingFood }>({ open: false });
 
   useEffect(() => { load(); }, [load]);
   // Assicura che i semilavorati siano caricati per avere gli ingredienti aggiornati
@@ -147,6 +166,36 @@ export default function IncomingFoods() {
     () => items.filter((item) => matchesFilter(item, statusFilter, warnDaysFor(item))),
     [items, statusFilter, warnDaysFor],
   );
+
+  /**
+   * FEFO: per ogni alimento, l'id della partita da usare per prima (attiva, non
+   * scaduta, con residuo e scadenza più vicina). Popolata solo quando esistono
+   * almeno due partite utilizzabili, cioè quando la scelta è reale.
+   */
+  const fefoFirstByItem = useMemo(() => {
+    const groups = new Map<string, ConsumableLot[]>();
+    for (const it of items) {
+      const list = groups.get(it.nome) ?? [];
+      list.push(itemToLot(it));
+      groups.set(it.nome, list);
+    }
+    const first = new Map<string, string>();
+    for (const [nome, lots] of groups) {
+      const chosen = pickFefoLot(lots);
+      if (!chosen?.id) continue;
+      const runnerUp = pickFefoLot(lots.filter((l) => l.id !== chosen.id));
+      if (runnerUp) first.set(nome, chosen.id);
+    }
+    return first;
+  }, [items]);
+
+  /** Partita della stessa referenza da usare prima dell'alimento in consumo (FEFO). */
+  const consumeFefoAlternative = useMemo(() => {
+    const it = consumeState.item;
+    if (!it) return null;
+    const sameName = items.filter((x) => x.nome === it.nome).map(itemToLot);
+    return findEarlierFefoLot(itemToLot(it), sameName);
+  }, [consumeState.item, items]);
 
   const grouped = useMemo(() => {
     const map = new Map<string, IncomingFood[]>();
@@ -290,6 +339,27 @@ export default function IncomingFoods() {
     });
   };
 
+  /** Apre il dialog per registrare il consumo della quantità residua. */
+  const openConsume = (it: IncomingFood) => setConsumeState({ open: true, item: it });
+
+  /**
+   * Registra il consumo: il backend blocca i lotti scaduti o non attivi e le
+   * quantità non valide. In caso di errore il dialog resta aperto.
+   */
+  const submitConsumption = async (consumed: number) => {
+    const it = consumeState.item;
+    if (!it) return;
+    try {
+      await consumeItem(it.id, consumed);
+      const residua = (it.quantitaResidua ?? it.quantita ?? 0) - consumed;
+      toast.success(residua > 0 ? 'Consumo registrato' : 'Consumo registrato: scorta esaurita');
+    } catch (e) {
+      console.error(e);
+      toast.error('Errore nel salvataggio del consumo');
+      throw e;
+    }
+  };
+
   // ---- Scansione codice a barre: compila lotto e scadenza ----
   const onBarcodeDetected = (text: string) => {
     const parsed = parseBarcode(text);
@@ -397,6 +467,11 @@ export default function IncomingFoods() {
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" className="w-48">
+          <DropdownMenuItem onSelect={() => openConsume(it)}>
+            <Package className="h-4 w-4" />
+            Registra consumo
+          </DropdownMenuItem>
+          <DropdownMenuSeparator />
           <DropdownMenuItem onSelect={() => onEdit(it)}>
             <Pencil className="h-4 w-4" />
             Modifica
@@ -652,6 +727,12 @@ export default function IncomingFoods() {
                                 {STATUS_BADGE[stato].label}
                               </Badge>
                             )}
+                            {fefoFirstByItem.get(it.nome) === it.id && (
+                              <Badge variant="outline" className="gap-1 border-primary/30 bg-primary/10 text-primary">
+                                <Sparkles className="h-3 w-3" />
+                                FEFO: usa per prima
+                              </Badge>
+                            )}
                           </div>
                         </TableCell>
                         <TableCell><span className="rounded-md bg-muted px-2 py-0.5 font-mono text-xs">{it.lotto}</span></TableCell>
@@ -703,6 +784,12 @@ export default function IncomingFoods() {
                             {STATUS_BADGE[stato].label}
                           </Badge>
                         )}
+                        {fefoFirstByItem.get(it.nome) === it.id && (
+                          <Badge variant="outline" className="mt-1.5 gap-1 border-primary/30 bg-primary/10 text-primary">
+                            <Sparkles className="h-3 w-3" />
+                            FEFO: usa per prima
+                          </Badge>
+                        )}
                       </div>
                       <div className="shrink-0">{renderActions(it)}</div>
                     </div>
@@ -748,6 +835,15 @@ export default function IncomingFoods() {
         open={labelOpen}
         onOpenChange={setLabelOpen}
         onApply={onLabelApply}
+      />
+
+      {/* Registra consumo: blocca i lotti scaduti/non attivi e segnala il FEFO. */}
+      <ConsumeLotDialog
+        open={consumeState.open}
+        onOpenChange={(open) => setConsumeState((s) => ({ ...s, open }))}
+        lot={consumeState.item ? itemToLot(consumeState.item) : null}
+        fefoAlternative={consumeFefoAlternative}
+        onConfirm={submitConsumption}
       />
 
       {confirmDialog}

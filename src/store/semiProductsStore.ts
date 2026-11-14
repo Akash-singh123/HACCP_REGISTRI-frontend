@@ -28,6 +28,12 @@ interface SemiProductsState {
   loadBatches: () => Promise<void>;
   addBatch: (payload: SemiProductBatchPayload) => Promise<SemiProductBatch>;
   updateBatch: (patch: SemiProductBatchPatch) => Promise<void>;
+  /**
+   * Registra il consumo di una parte della quantità residua di un lotto.
+   * BLOCCA i lotti scaduti o non attivi (stessa validazione del modulo
+   * `consumption`). Non cancella mai la riga: la esaurisce archiviandola.
+   */
+  consumeBatch: (id: string, consumed: number, opts?: { note?: string; archiveIfEmpty?: boolean }) => Promise<void>;
   addTemplate: (template: SemiProductTemplate) => Promise<void>;
   removeTemplate: (nome: string) => Promise<void>;
   removeIngredient: (templateNome: string, index: number) => Promise<void>;
@@ -73,6 +79,15 @@ export const useSemiProductsStore = create<SemiProductsState>((set, get) => {
     },
     updateBatch: async (patch) => {
       const { item } = await activeData.semi.batches.update(patch);
+      set({ batches: get().batches.map((b) => (b.id === item.id ? item : b)) });
+    },
+    consumeBatch: async (id, consumed, opts) => {
+      const { item } = await activeData.semi.batches.consume({
+        id,
+        consumed,
+        note: opts?.note,
+        archiveIfEmpty: opts?.archiveIfEmpty,
+      });
       set({ batches: get().batches.map((b) => (b.id === item.id ? item : b)) });
     },
     load: async () => {

@@ -108,6 +108,102 @@ function mapBatch(r: BatchRow) {
 const BATCH_COLUMNS =
   'id, product_name, lot, produced_on, expiry_date, quantity_initial, quantity_remaining, unit, category, ingredients, notes, status, archived_at, discarded_at, created_at';
 
+interface IncomingRow {
+  id: string;
+  name: string;
+  lot: string | null;
+  purchase_date: string | null;
+  expiry_date: string | null;
+  supplier: string | null;
+  quantity_initial: number | null;
+  quantity_remaining: number | null;
+  unit: string | null;
+  category: string | null;
+  status: string | null;
+  archived_at: string | null;
+  discarded_at: string | null;
+  created_at: string | null;
+}
+
+function mapIncoming(r: IncomingRow) {
+  return {
+    id: r.id,
+    nome: r.name,
+    lotto: r.lot ?? '',
+    dataAcquisto: r.purchase_date ?? '',
+    dataScadenza: r.expiry_date ?? '',
+    fornitore: r.supplier ?? '',
+    quantita: r.quantity_initial ?? null,
+    quantitaResidua: r.quantity_remaining ?? null,
+    unita: r.unit ?? '',
+    categoria: r.category ?? '',
+    stato: (r.status ?? 'active') as 'active' | 'archived' | 'discarded',
+    archiviatoIl: r.archived_at ?? null,
+    scartatoIl: r.discarded_at ?? null,
+    createdAt: r.created_at ? new Date(r.created_at).getTime() : 0,
+  };
+}
+
+/**
+ * True se la data ISO (YYYY-MM-DD) è precedente a oggi. Usata per BLOCCARE il
+ * consumo di lotti scaduti: il client non è attendibile, il controllo è ripetuto
+ * qui con la stessa semantica del modulo puro condiviso `consumption`.
+ */
+function isPastDate(value: string | null | undefined): boolean {
+  if (!value) return false;
+  const today = new Date().toISOString().slice(0, 10);
+  return String(value).slice(0, 10) < today;
+}
+
+/** Legge e valida la quantità consumata dal body della richiesta. */
+function readConsumed(body: Record<string, unknown>): number {
+  const consumed = Number(body.consumed);
+  if (!Number.isFinite(consumed) || consumed <= 0) {
+    throw new HttpError(400, 'Quantità consumata non valida', 'bad_qty');
+  }
+  return consumed;
+}
+
+/**
+ * Applica la logica di consumo su una scorta senza scrivere: BLOCCA lotti
+ * scaduti o non attivi e quantità non tracciata o eccedente. Ritorna la nuova
+ * quantità residua (arrotondata) e segnala se la scorta si esaurisce.
+ * I codici di errore sono allineati a `ConsumptionBlock` del client.
+ */
+function computeConsumption(
+  row: { expiry_date: string | null; status: string | null; quantity_initial: number | null; quantity_remaining: number | null },
+  consumed: number,
+): { remaining: number; empties: boolean } {
+  if ((row.status ?? 'active') !== 'active') {
+    throw new HttpError(
+      409,
+      'Il lotto non è attivo: ripristinalo prima di registrarne il consumo',
+      'lot_not_active',
+    );
+  }
+  if (isPastDate(row.expiry_date)) {
+    throw new HttpError(
+      409,
+      'Lotto scaduto: non può essere utilizzato. Registra lo scarto per smaltirlo.',
+      'lot_expired',
+    );
+  }
+  const available = row.quantity_remaining ?? row.quantity_initial;
+  if (available == null) {
+    throw new HttpError(
+      409,
+      'Quantità non tracciata: aggiorna la voce per registrare il consumo',
+      'qty_not_tracked',
+    );
+  }
+  if (consumed > Number(available)) {
+    throw new HttpError(400, 'La quantità consumata supera la residua disponibile', 'qty_exceeds');
+  }
+  const remaining = Math.round((Number(available) - consumed) * 1e6) / 1e6;
+  return { remaining, empties: remaining <= 0 };
+}
+
+
 /**
  * Scrive in blocco un elenco di registri giornalieri per l'azienda indicata.
  * L'upsert è idempotente sulla chiave (azienda, data). Ritorna il numero di righe.
@@ -414,6 +510,52 @@ Deno.serve(async (req: Request) => {
         return json({ ok: true });
       }
 
+      // Consumo residuo di una materia prima: riduce `quantity_remaining` senza
+      // mai cancellare la riga. BLOCCA i lotti scaduti o non attivi e le quantità
+      // non tracciate o eccedenti (stessa semantica del modulo `consumption`).
+      case 'incoming.consume': {
+        await assertFeature(ctx, 'allergeni');
+        requireWrite(ctx);
+        const id = String(body.id ?? '');
+        if (!id) throw new HttpError(400, 'Voce non specificata', 'bad_id');
+
+        const { data: row, error } = await ctx.admin
+          .from('incoming_foods')
+          .select('id, expiry_date, status, quantity_initial, quantity_remaining')
+          .eq('id', id)
+          .eq('company_id', ctx.companyId)
+          .maybeSingle();
+        if (error) throw new HttpError(500, 'Errore lettura materia prima', 'db_error');
+        if (!row) throw new HttpError(404, 'Voce non trovata', 'not_found');
+
+        const consumed = readConsumed(body);
+        const { remaining, empties } = computeConsumption(row, consumed);
+
+        const now = new Date().toISOString();
+        const archiveIfEmpty = body.archiveIfEmpty !== false;
+        const patch: Record<string, unknown> = { quantity_remaining: remaining, updated_at: now };
+        if (archiveIfEmpty && empties) {
+          patch.status = 'archived';
+          patch.archived_at = now;
+        }
+
+        const { data, error: upErr } = await ctx.admin
+          .from('incoming_foods')
+          .update(patch)
+          .eq('id', id)
+          .eq('company_id', ctx.companyId)
+          .select('id, status, quantity_remaining')
+          .maybeSingle();
+        if (upErr) throw new HttpError(500, 'Errore aggiornamento consumo', 'db_error');
+        if (!data) throw new HttpError(404, 'Voce non trovata', 'not_found');
+        await audit(ctx, 'incoming.consume', 'incoming_foods', id);
+        return json({
+          id: data.id,
+          quantitaResidua: data.quantity_remaining ?? remaining,
+          stato: (data.status ?? 'active') as 'active' | 'archived' | 'discarded',
+        });
+      }
+
       // --------------------------------------------------------------- SEMI
       case 'semi.get': {
         await assertFeature(ctx, 'allergeni');
@@ -544,6 +686,50 @@ Deno.serve(async (req: Request) => {
         if (error) throw new HttpError(500, 'Errore aggiornamento lotto', 'db_error');
         if (!data) throw new HttpError(404, 'Lotto non trovato', 'not_found');
         await audit(ctx, 'semi.batch.update', 'semi_product_batches', id);
+        return json({ item: mapBatch(data as BatchRow) });
+      }
+
+      // Consumo residuo di un lotto semilavorato: riduce `quantity_remaining`
+      // senza cancellare la riga e BLOCCA i lotti scaduti o non attivi.
+      case 'semi.batches.consume': {
+        await assertFeature(ctx, 'allergeni');
+        requireWrite(ctx);
+        const id = String(body.id ?? '');
+        if (!id) throw new HttpError(400, 'Lotto non specificato', 'bad_id');
+
+        const { data: row, error } = await ctx.admin
+          .from('semi_product_batches')
+          .select('id, expiry_date, status, quantity_initial, quantity_remaining')
+          .eq('id', id)
+          .eq('company_id', ctx.companyId)
+          .maybeSingle();
+        if (error) throw new HttpError(500, 'Errore lettura lotto', 'db_error');
+        if (!row) throw new HttpError(404, 'Lotto non trovato', 'not_found');
+
+        const consumed = readConsumed(body);
+        const { remaining, empties } = computeConsumption(row, consumed);
+
+        const now = new Date().toISOString();
+        const archiveIfEmpty = body.archiveIfEmpty !== false;
+        const patch: Record<string, unknown> = { quantity_remaining: remaining, updated_at: now };
+        if (body.note !== undefined) {
+          patch.notes = body.note ? String(body.note).slice(0, MAX_NOTES) : null;
+        }
+        if (archiveIfEmpty && empties) {
+          patch.status = 'archived';
+          patch.archived_at = now;
+        }
+
+        const { data, error: upErr } = await ctx.admin
+          .from('semi_product_batches')
+          .update(patch)
+          .eq('id', id)
+          .eq('company_id', ctx.companyId)
+          .select(BATCH_COLUMNS)
+          .maybeSingle();
+        if (upErr) throw new HttpError(500, 'Errore aggiornamento consumo lotto', 'db_error');
+        if (!data) throw new HttpError(404, 'Lotto non trovato', 'not_found');
+        await audit(ctx, 'semi.batch.consume', 'semi_product_batches', id);
         return json({ item: mapBatch(data as BatchRow) });
       }
 

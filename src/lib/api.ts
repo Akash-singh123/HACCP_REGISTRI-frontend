@@ -223,6 +223,28 @@ export interface SemiProductBatchPatch {
   stato?: StockStatus;
 }
 
+/**
+ * Registrazione di un consumo: riduce la quantità residua di una scorta.
+ * Il backend blocca l'uso di lotti scaduti o non attivi.
+ */
+export interface ConsumePayload {
+  /** Identificativo della scorta (alimento in ingresso o lotto di semilavorato). */
+  id: string;
+  /** Quantità utilizzata (deve essere > 0 e non superare la residua). */
+  consumed: number;
+  /** Nota facoltativa (tracciata solo per i lotti di semilavorato). */
+  note?: string;
+  /** Archivia automaticamente la scorta quando il consumo la esaurisce. */
+  archiveIfEmpty?: boolean;
+}
+
+/** Esito di un consumo su una materia prima in ingresso. */
+export interface IncomingConsumeResult {
+  id: string;
+  quantitaResidua: number;
+  stato: StockStatus;
+}
+
 // ── Regole di scadenza configurabili per azienda ───────────────────────────
 // La logica vive nel modulo puro `@/lib/expiryRules` (nessuna dipendenza dal
 // client): qui la ri-esportiamo per mantenere validi i punti di import esistenti
@@ -251,6 +273,27 @@ export type {
   ExpiryRulesFormInput,
   ExpiryRulesValidation,
 } from './expiryRules';
+
+// ── Consumo residuo e FEFO ─────────────────────────────────────────────────
+// La logica pura vive in `@/lib/consumption` (client e server condividono la
+// stessa semantica di blocco del lotto scaduto).
+export {
+  checkConsumption,
+  daysToExpiry,
+  effectiveRemaining,
+  fefoOrder,
+  findEarlierFefoLot,
+  isExpired,
+  isUsable,
+  parseQuantity,
+  pickFefoLot,
+} from './consumption';
+export type {
+  ConsumableLot,
+  ConsumptionBlock,
+  ConsumptionCheck,
+  LotStatus,
+} from './consumption';
 
 /** File archiviato nel bucket documenti dell'azienda. */
 export interface DocFile {
@@ -843,6 +886,9 @@ export const api = {
         call<{ id: string }>('haccp-data', { action: 'incoming.upsert', ...payload }, companyId),
       setStatus: (companyId: string, id: string, stato: StockStatus) =>
         call<{ id: string; stato: StockStatus }>('haccp-data', { action: 'incoming.setStatus', id, stato }, companyId),
+      // Consumo residuo: riduce la quantità disponibile. Blocca lotti scaduti.
+      consume: (companyId: string, payload: ConsumePayload) =>
+        call<IncomingConsumeResult>('haccp-data', { action: 'incoming.consume', ...payload }, companyId),
       remove: (companyId: string, id: string) =>
         call<{ ok: boolean }>('haccp-data', { action: 'incoming.delete', id }, companyId),
     },
@@ -859,6 +905,9 @@ export const api = {
           call<{ item: SemiProductBatch }>('haccp-data', { action: 'semi.batches.upsert', ...payload }, companyId),
         update: (companyId: string, payload: SemiProductBatchPatch) =>
           call<{ item: SemiProductBatch }>('haccp-data', { action: 'semi.batches.update', ...payload }, companyId),
+        // Consumo residuo: riduce la quantità disponibile. Blocca lotti scaduti.
+        consume: (companyId: string, payload: ConsumePayload) =>
+          call<{ item: SemiProductBatch }>('haccp-data', { action: 'semi.batches.consume', ...payload }, companyId),
       },
     },
     equipment: {
@@ -1024,6 +1073,7 @@ export const activeData = {
     list: () => api.data.incoming.list(requireCompany()),
     upsert: (payload: IncomingFoodPayload) => api.data.incoming.upsert(requireCompany(), payload),
     setStatus: (id: string, stato: StockStatus) => api.data.incoming.setStatus(requireCompany(), id, stato),
+    consume: (payload: ConsumePayload) => api.data.incoming.consume(requireCompany(), payload),
     remove: (id: string) => api.data.incoming.remove(requireCompany(), id),
   },
   semi: {
@@ -1034,6 +1084,7 @@ export const activeData = {
       list: () => api.data.semi.batches.list(requireCompany()),
       upsert: (payload: SemiProductBatchPayload) => api.data.semi.batches.upsert(requireCompany(), payload),
       update: (payload: SemiProductBatchPatch) => api.data.semi.batches.update(requireCompany(), payload),
+      consume: (payload: ConsumePayload) => api.data.semi.batches.consume(requireCompany(), payload),
     },
   },
   equipment: {

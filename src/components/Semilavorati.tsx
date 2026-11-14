@@ -12,8 +12,9 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { Separator } from '@/components/ui/separator';
 import { useConfirm } from '@/components/ConfirmDialog';
+import { ConsumeLotDialog } from '@/components/ConsumeLotDialog';
 import { toast } from 'sonner';
-import { activeDocs, activePrinting, readExpiryRules, resolveExpiryRule, type LabelPayload, type PrintJob, type SemiProductBatch, type StockStatus } from '@/lib/api';
+import { activeDocs, activePrinting, findEarlierFefoLot, pickFefoLot, readExpiryRules, resolveExpiryRule, type ConsumableLot, type LabelPayload, type PrintJob, type SemiProductBatch, type StockStatus } from '@/lib/api';
 import { newIdempotencyKey, printLabel, printQueue, printerRegistry, usePrintersStore } from '@/printing';
 import { ReprintDialog } from '@/components/printing/ReprintDialog';
 import { useAuth } from '@/hooks/useAuth';
@@ -39,6 +40,7 @@ import {
   Printer,
   RotateCcw,
   Save,
+  Sparkles,
   Tags,
   Trash2,
   Upload,
@@ -89,6 +91,20 @@ function parseQuantity(value?: string): number | null {
   if (!t) return null;
   const n = Number(t);
   return Number.isFinite(n) ? n : null;
+}
+
+/** Vista consumabile di un lotto di produzione (consumo e FEFO). */
+function batchToLot(b: SemiProductBatch): ConsumableLot {
+  return {
+    id: b.id,
+    label: b.prodotto,
+    lot: b.lotto,
+    expiryDate: b.dataScadenza ?? null,
+    remaining: b.quantitaResidua ?? null,
+    initial: b.quantitaIniziale ?? null,
+    unit: b.unita,
+    status: b.stato ?? 'active',
+  };
 }
 
 /** True se il lotto rientra nel filtro di stato selezionato. */
@@ -151,6 +167,7 @@ export default function Semilavorati() {
     loadBatches,
     addBatch,
     updateBatch,
+    consumeBatch,
   } = useSemiProductsStore();
   const { items: incomingItems, load: loadIncomingFoods } = useIncomingFoodsStore();
   const { confirm, confirmDialog } = useConfirm();
@@ -177,11 +194,7 @@ export default function Semilavorati() {
 
   // --- Lotti di produzione: filtro di stato e registrazione del consumo ---
   const [batchFilter, setBatchFilter] = useState<BatchFilter>('attivi');
-  const [consumeState, setConsumeState] = useState<{ open: boolean; batch?: SemiProductBatch; value: string; note: string }>({
-    open: false,
-    value: '',
-    note: '',
-  });
+  const [consumeState, setConsumeState] = useState<{ open: boolean; batch?: SemiProductBatch }>({ open: false });
 
   useEffect(() => { load(); }, [load]);
   // Carica i lotti di produzione registrati (tracciabilità, scadenze, archivio).
@@ -231,6 +244,36 @@ export default function Semilavorati() {
     () => batches.filter((b) => matchesBatchFilter(b, batchFilter, warnDaysFor(b))),
     [batches, batchFilter, warnDaysFor],
   );
+
+  /**
+   * FEFO: per ogni prodotto, l'id della partita da usare per prima (attiva, non
+   * scaduta, con residuo e scadenza più vicina). Popolata solo quando esistono
+   * almeno due partite utilizzabili, cioè quando la scelta è reale.
+   */
+  const fefoFirstByProduct = useMemo(() => {
+    const groups = new Map<string, ConsumableLot[]>();
+    for (const b of batches) {
+      const list = groups.get(b.prodotto) ?? [];
+      list.push(batchToLot(b));
+      groups.set(b.prodotto, list);
+    }
+    const first = new Map<string, string>();
+    for (const [prodotto, lots] of groups) {
+      const chosen = pickFefoLot(lots);
+      if (!chosen?.id) continue;
+      const runnerUp = pickFefoLot(lots.filter((l) => l.id !== chosen.id));
+      if (runnerUp) first.set(prodotto, chosen.id);
+    }
+    return first;
+  }, [batches]);
+
+  /** Partita della stessa referenza da usare prima del lotto in consumo (FEFO). */
+  const consumeFefoAlternative = useMemo(() => {
+    const b = consumeState.batch;
+    if (!b) return null;
+    const sameProduct = batches.filter((x) => x.prodotto === b.prodotto).map(batchToLot);
+    return findEarlierFefoLot(batchToLot(b), sameProduct);
+  }, [consumeState.batch, batches]);
 
   const form = useForm<z.infer<typeof schema>>({
     resolver: zodResolver(schema),
@@ -820,28 +863,26 @@ export default function Semilavorati() {
     });
   };
 
-  /** Apre il dialog per registrare il consumo (nuova quantità residua). */
+  /** Apre il dialog per registrare il consumo della quantità residua. */
   const openConsume = (b: SemiProductBatch) => {
-    setConsumeState({
-      open: true,
-      batch: b,
-      value: b.quantitaResidua != null ? String(b.quantitaResidua) : '',
-      note: '',
-    });
+    setConsumeState({ open: true, batch: b });
   };
 
-  const submitConsumption = async () => {
-    const { batch, value, note } = consumeState;
+  /**
+   * Registra il consumo: il backend blocca i lotti scaduti o non attivi e le
+   * quantità non valide. In caso di errore il dialog resta aperto.
+   */
+  const submitConsumption = async (consumed: number, note?: string) => {
+    const batch = consumeState.batch;
     if (!batch) return;
-    const residua = parseQuantity(value);
-    if (residua === null || residua < 0) return toast.error('Inserisci una quantità residua valida');
     try {
-      await updateBatch({ id: batch.id, quantitaResidua: residua, note: note.trim() || undefined });
-      toast.success('Consumo registrato');
-      setConsumeState({ open: false, value: '', note: '' });
+      await consumeBatch(batch.id, consumed, { note });
+      const residua = (batch.quantitaResidua ?? batch.quantitaIniziale ?? 0) - consumed;
+      toast.success(residua > 0 ? 'Consumo registrato' : 'Consumo registrato: lotto esaurito');
     } catch (e) {
       console.error(e);
       toast.error('Errore nel salvataggio del consumo');
+      throw e;
     }
   };
 
@@ -1406,6 +1447,12 @@ export default function Semilavorati() {
                                 {STOCK_STATUS_BADGE[stato].label}
                               </Badge>
                             )}
+                            {fefoFirstByProduct.get(b.prodotto) === b.id && (
+                              <Badge variant="outline" className="gap-1 border-primary/30 bg-primary/10 text-primary">
+                                <Sparkles className="h-3 w-3" />
+                                FEFO: usa per prima
+                              </Badge>
+                            )}
                           </div>
                           <p className="mt-0.5 truncate text-xs text-muted-foreground">
                             {b.dataProduzione ? `Prodotto ${formatDate(b.dataProduzione)}` : 'Produzione n/d'}
@@ -1725,46 +1772,15 @@ export default function Semilavorati() {
         </DialogContent>
       </Dialog>
 
-      {/* ── Dialog: registra consumo del lotto ──────────────── */}
-      <Dialog open={consumeState.open} onOpenChange={(open) => setConsumeState((s) => ({ ...s, open }))}>
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle>Registra consumo</DialogTitle>
-            <DialogDescription>
-              {consumeState.batch
-                ? `${consumeState.batch.prodotto} · lotto ${consumeState.batch.lotto}. Indica la quantità residua dopo l'uso.`
-                : 'Indica la quantità residua dopo l\'uso.'}
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4">
-            <div className="space-y-1.5">
-              <Label className="field-label">
-                Quantità residua{consumeState.batch?.unita ? ` (${consumeState.batch.unita})` : ''}
-              </Label>
-              <Input
-                value={consumeState.value}
-                onChange={(e) => setConsumeState((s) => ({ ...s, value: e.target.value }))}
-                placeholder="es. 1,5"
-                autoFocus
-              />
-            </div>
-            <div className="space-y-1.5">
-              <Label className="field-label">Note (opzionale)</Label>
-              <Input
-                value={consumeState.note}
-                onChange={(e) => setConsumeState((s) => ({ ...s, note: e.target.value }))}
-                placeholder="es. Usato per il servizio di pranzo"
-              />
-            </div>
-          </div>
-          <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => setConsumeState({ open: false, value: '', note: '' })}>
-              Annulla
-            </Button>
-            <Button onClick={() => void submitConsumption()}>Salva consumo</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      {/* ── Dialog: registra consumo del lotto (blocco scaduti + FEFO) ── */}
+      <ConsumeLotDialog
+        open={consumeState.open}
+        onOpenChange={(open) => setConsumeState((s) => ({ ...s, open }))}
+        lot={consumeState.batch ? batchToLot(consumeState.batch) : null}
+        fefoAlternative={consumeFefoAlternative}
+        withNote
+        onConfirm={submitConsumption}
+      />
 
       <ReprintDialog
         open={!!reprintJob}

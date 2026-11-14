@@ -28,6 +28,12 @@ interface IncomingFoodsState {
   updateItem: (id: string, patch: Partial<IncomingFood>) => Promise<void>;
   /** Cambia lo stato del ciclo di vita senza cancellare la riga. */
   setStatus: (id: string, stato: StockStatus) => Promise<void>;
+  /**
+   * Registra il consumo di una parte della quantità residua. BLOCCA i lotti
+   * scaduti o non attivi (stessa validazione del modulo `consumption`).
+   * Non cancella mai la riga: la esaurisce archiviandola.
+   */
+  consumeItem: (id: string, consumed: number, opts?: { archiveIfEmpty?: boolean }) => Promise<void>;
   removeItem: (id: string) => Promise<void>;
 }
 
@@ -89,5 +95,13 @@ export const useIncomingFoodsStore = create<IncomingFoodsState>((set, get) => ({
   removeItem: async (id) => {
     await activeData.incoming.remove(id);
     set({ items: get().items.filter((i) => i.id !== id) });
+  },
+  consumeItem: async (id, consumed, opts) => {
+    const res = await activeData.incoming.consume({ id, consumed, archiveIfEmpty: opts?.archiveIfEmpty });
+    set({
+      items: get().items.map((i) =>
+        i.id === id ? { ...i, quantitaResidua: res.quantitaResidua, stato: res.stato } : i,
+      ),
+    });
   },
 }));
