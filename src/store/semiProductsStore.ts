@@ -1,5 +1,10 @@
 import { create } from 'zustand';
-import { activeData } from '@/lib/api';
+import {
+  activeData,
+  type SemiProductBatch,
+  type SemiProductBatchPayload,
+  type SemiProductBatchPatch,
+} from '@/lib/api';
 
 export interface IngredientTemplate {
   nome: string;
@@ -16,7 +21,13 @@ interface SemiProductsState {
   templates: SemiProductTemplate[];
   categories: string[];
   loaded: boolean;
+  /** Lotti di produzione registrati (tracciabilità e scadenze). */
+  batches: SemiProductBatch[];
+  batchesLoaded: boolean;
   load: () => Promise<void>;
+  loadBatches: () => Promise<void>;
+  addBatch: (payload: SemiProductBatchPayload) => Promise<SemiProductBatch>;
+  updateBatch: (patch: SemiProductBatchPatch) => Promise<void>;
   addTemplate: (template: SemiProductTemplate) => Promise<void>;
   removeTemplate: (nome: string) => Promise<void>;
   removeIngredient: (templateNome: string, index: number) => Promise<void>;
@@ -49,6 +60,21 @@ export const useSemiProductsStore = create<SemiProductsState>((set, get) => {
     templates: DEFAULT_TEMPLATES,
     categories: DEFAULT_CATEGORIES,
     loaded: false,
+    batches: [],
+    batchesLoaded: false,
+    loadBatches: async () => {
+      const { items } = await activeData.semi.batches.list();
+      set({ batches: items, batchesLoaded: true });
+    },
+    addBatch: async (payload) => {
+      const { item } = await activeData.semi.batches.upsert(payload);
+      set({ batches: [item, ...get().batches] });
+      return item;
+    },
+    updateBatch: async (patch) => {
+      const { item } = await activeData.semi.batches.update(patch);
+      set({ batches: get().batches.map((b) => (b.id === item.id ? item : b)) });
+    },
     load: async () => {
       const { templates, categories } = await activeData.semi.get();
       const loadedTemplates = Array.isArray(templates)

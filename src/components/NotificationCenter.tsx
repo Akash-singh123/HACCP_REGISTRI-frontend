@@ -25,6 +25,7 @@ import {
   Bug,
   CalendarClock,
   CheckCircle2,
+  ChefHat,
   FileCheck2,
   Loader2,
   PackagePlus,
@@ -41,6 +42,7 @@ import { cn } from '@/lib/utils';
 /** Area dell'app verso cui porta la categoria dell'avviso. */
 const CATEGORY_TAB: Record<AlertCategory, string> = {
   temperature: 'daily',
+  semilavorati: 'semilavorati',
   lotti: 'ingresso',
   pest_piano: 'infestanti',
   pest_certificazioni: 'infestanti',
@@ -49,6 +51,7 @@ const CATEGORY_TAB: Record<AlertCategory, string> = {
 
 const CATEGORY_META: Record<AlertCategory, { label: string; icon: LucideIcon }> = {
   temperature: { label: 'Temperature fuori range', icon: Thermometer },
+  semilavorati: { label: 'Semilavorati in scadenza', icon: ChefHat },
   lotti: { label: 'Lotti in ingresso', icon: PackagePlus },
   pest_piano: { label: 'Piano controlli infestanti', icon: Bug },
   pest_certificazioni: { label: 'Certificazioni ditte esterne', icon: FileCheck2 },

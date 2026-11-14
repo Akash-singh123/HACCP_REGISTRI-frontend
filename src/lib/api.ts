@@ -143,6 +143,9 @@ export interface RecordUpsertPayload {
   signature?: string;
 }
 
+/** Stato del ciclo di vita di una scorta (nessuna cancellazione fisica). */
+export type StockStatus = 'active' | 'archived' | 'discarded';
+
 /** Materia prima in ingresso così come restituita dal backend. */
 export interface IncomingFoodRow {
   id: string;
@@ -151,6 +154,14 @@ export interface IncomingFoodRow {
   dataAcquisto: string;
   dataScadenza: string;
   fornitore: string;
+  /** Quantità iniziale e residua (opzionali finché non tracciate). */
+  quantita: number | null;
+  quantitaResidua: number | null;
+  unita: string;
+  categoria: string;
+  stato: StockStatus;
+  archiviatoIl: string | null;
+  scartatoIl: string | null;
   createdAt: number;
 }
 
@@ -162,6 +173,89 @@ export interface IncomingFoodPayload {
   dataAcquisto?: string;
   dataScadenza?: string;
   fornitore?: string;
+  quantita?: number | null;
+  quantitaResidua?: number | null;
+  unita?: string;
+  categoria?: string;
+  stato?: StockStatus;
+}
+
+/** Lotto di semilavorato prodotto internamente. */
+export interface SemiProductBatch {
+  id: string;
+  prodotto: string;
+  lotto: string;
+  dataProduzione: string;
+  dataScadenza: string;
+  quantitaIniziale: number | null;
+  quantitaResidua: number | null;
+  unita: string;
+  ingredienti: { nome: string; lotto: string }[];
+  note: string;
+  stato: StockStatus;
+  archiviatoIl: string | null;
+  scartatoIl: string | null;
+  createdAt: number;
+}
+
+/** Payload per registrare/aggiornare un lotto di semilavorato. */
+export interface SemiProductBatchPayload {
+  prodotto: string;
+  lotto: string;
+  dataProduzione?: string;
+  dataScadenza?: string;
+  quantitaIniziale?: number | null;
+  quantitaResidua?: number | null;
+  unita?: string;
+  ingredienti?: { nome: string; lotto: string }[];
+  note?: string;
+}
+
+/** Aggiornamento parziale di un lotto (consumo, scarto, note). */
+export interface SemiProductBatchPatch {
+  id: string;
+  quantitaResidua?: number;
+  note?: string;
+  stato?: StockStatus;
+}
+
+// ── Regole di scadenza configurabili per azienda ───────────────────────────
+// Rispecchiano `companies.settings.expiry_rules` usate dal backend, con gli
+// stessi default: nessuna soglia codificata rigidamente nell'interfaccia.
+
+export interface ExpiryRule {
+  /** Giorni prima della scadenza in cui avvisare. */
+  warnDays: number;
+  /** Giorni dopo la scadenza oltre i quali archiviare automaticamente. */
+  archiveDays: number;
+}
+
+export interface ExpiryRules {
+  incoming: ExpiryRule;
+  semi: ExpiryRule;
+}
+
+export const DEFAULT_EXPIRY_RULES: ExpiryRules = {
+  incoming: { warnDays: 30, archiveDays: 30 },
+  semi: { warnDays: 1, archiveDays: 7 },
+};
+
+/** Legge le regole di scadenza dalle impostazioni azienda (default se assenti). */
+export function readExpiryRules(settings?: Record<string, unknown> | null): ExpiryRules {
+  const raw = (settings?.expiry_rules ?? null) as
+    | Partial<Record<'incoming' | 'semi', Partial<ExpiryRule>>>
+    | null;
+  const pick = (kind: 'incoming' | 'semi'): ExpiryRule => {
+    const def = DEFAULT_EXPIRY_RULES[kind];
+    const value = raw?.[kind];
+    const warn = Number(value?.warnDays);
+    const archive = Number(value?.archiveDays);
+    return {
+      warnDays: Number.isFinite(warn) && warn >= 0 ? warn : def.warnDays,
+      archiveDays: Number.isFinite(archive) && archive >= 0 ? archive : def.archiveDays,
+    };
+  };
+  return { incoming: pick('incoming'), semi: pick('semi') };
 }
 
 /** File archiviato nel bucket documenti dell'azienda. */
@@ -561,6 +655,7 @@ export type AlertSeverity = 'critical' | 'warning';
 /** Categoria dell'avviso, mappata sull'area dell'app di riferimento. */
 export type AlertCategory =
   | 'temperature'
+  | 'semilavorati'
   | 'lotti'
   | 'pest_piano'
   | 'pest_certificazioni'
@@ -752,6 +847,8 @@ export const api = {
         call<{ items: IncomingFoodRow[] }>('haccp-data', { action: 'incoming.list' }, companyId),
       upsert: (companyId: string, payload: IncomingFoodPayload) =>
         call<{ id: string }>('haccp-data', { action: 'incoming.upsert', ...payload }, companyId),
+      setStatus: (companyId: string, id: string, stato: StockStatus) =>
+        call<{ id: string; stato: StockStatus }>('haccp-data', { action: 'incoming.setStatus', id, stato }, companyId),
       remove: (companyId: string, id: string) =>
         call<{ ok: boolean }>('haccp-data', { action: 'incoming.delete', id }, companyId),
     },
@@ -760,6 +857,15 @@ export const api = {
         call<{ templates: unknown; categories: unknown }>('haccp-data', { action: 'semi.get' }, companyId),
       save: (companyId: string, payload: { templates: unknown[]; categories: string[] }) =>
         call<{ ok: boolean }>('haccp-data', { action: 'semi.save', ...payload }, companyId),
+      // Lotti di produzione registrati (tracciabilità, scadenze, archivio).
+      batches: {
+        list: (companyId: string) =>
+          call<{ items: SemiProductBatch[] }>('haccp-data', { action: 'semi.batches.list' }, companyId),
+        upsert: (companyId: string, payload: SemiProductBatchPayload) =>
+          call<{ item: SemiProductBatch }>('haccp-data', { action: 'semi.batches.upsert', ...payload }, companyId),
+        update: (companyId: string, payload: SemiProductBatchPatch) =>
+          call<{ item: SemiProductBatch }>('haccp-data', { action: 'semi.batches.update', ...payload }, companyId),
+      },
     },
     equipment: {
       list: (companyId: string) =>
@@ -923,12 +1029,18 @@ export const activeData = {
   incoming: {
     list: () => api.data.incoming.list(requireCompany()),
     upsert: (payload: IncomingFoodPayload) => api.data.incoming.upsert(requireCompany(), payload),
+    setStatus: (id: string, stato: StockStatus) => api.data.incoming.setStatus(requireCompany(), id, stato),
     remove: (id: string) => api.data.incoming.remove(requireCompany(), id),
   },
   semi: {
     get: () => api.data.semi.get(requireCompany()),
     save: (payload: { templates: unknown[]; categories: string[] }) =>
       api.data.semi.save(requireCompany(), payload),
+    batches: {
+      list: () => api.data.semi.batches.list(requireCompany()),
+      upsert: (payload: SemiProductBatchPayload) => api.data.semi.batches.upsert(requireCompany(), payload),
+      update: (payload: SemiProductBatchPatch) => api.data.semi.batches.update(requireCompany(), payload),
+    },
   },
   equipment: {
     list: () => api.data.equipment.list(requireCompany()),

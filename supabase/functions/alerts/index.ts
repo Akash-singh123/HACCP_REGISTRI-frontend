@@ -21,8 +21,10 @@ import {
 import {
   computeAlerts,
   countBySeverity,
+  DEFAULT_ALERT_RULES,
   type AlertInputs,
   type AlertItem,
+  type AlertRules,
 } from '../_shared/alerts.ts';
 import webpush from 'npm:web-push@3.6.7';
 
@@ -62,6 +64,33 @@ async function loadFeatures(admin: GuardContext['admin'], companyId: string): Pr
 }
 
 /**
+ * Legge le soglie di scadenza configurate per l'azienda da
+ * companies.settings->'expiry_rules', applicando i default se assenti.
+ * Le regole NON sono codificate: ogni ristorante può personalizzarle.
+ */
+async function loadRules(admin: GuardContext['admin'], companyId: string): Promise<AlertRules> {
+  const { data } = await admin
+    .from('companies')
+    .select('settings')
+    .eq('id', companyId)
+    .maybeSingle();
+  const settings = (data?.settings ?? {}) as { expiry_rules?: Partial<AlertRules> };
+  const r = settings.expiry_rules ?? {};
+  const num = (v: unknown, fallback: number) =>
+    typeof v === 'number' && Number.isFinite(v) && v >= 0 ? v : fallback;
+  return {
+    incoming: {
+      warnDays: num(r.incoming?.warnDays, DEFAULT_ALERT_RULES.incoming.warnDays),
+      archiveDays: num(r.incoming?.archiveDays, DEFAULT_ALERT_RULES.incoming.archiveDays),
+    },
+    semi: {
+      warnDays: num(r.semi?.warnDays, DEFAULT_ALERT_RULES.semi.warnDays),
+      archiveDays: num(r.semi?.archiveDays, DEFAULT_ALERT_RULES.semi.archiveDays),
+    },
+  };
+}
+
+/**
  * Legge dal database tutte le righe necessarie al calcolo degli avvisi per
  * l'azienda indicata. Il sottoinsieme delle tabelle del modulo infestanti viene
  * letto solo se la licenza abilita la feature 'pest_control'.
@@ -71,6 +100,7 @@ async function loadInputs(
   companyId: string,
   today: string,
   includePest: boolean,
+  rules: AlertRules,
 ): Promise<AlertInputs> {
   const lookback = new Date(Date.parse(`${today}T00:00:00Z`) - 30 * 86400000)
     .toISOString()
@@ -78,7 +108,7 @@ async function loadInputs(
 
   const empty = { data: [] as unknown[], error: null };
 
-  const [equipment, records, foods, schedules, documents, stations, inspections, interventions, actions] =
+  const [equipment, records, foods, semiBatches, schedules, documents, stations, inspections, interventions, actions] =
     await Promise.all([
       admin.from('company_equipment').select('id, kind, name').eq('company_id', companyId),
       admin
@@ -90,8 +120,16 @@ async function loadInputs(
         .order('record_date', { ascending: false }),
       admin
         .from('incoming_foods')
-        .select('id, name, lot, supplier, expiry_date')
+        .select('id, name, lot, supplier, expiry_date, quantity_remaining, unit, status')
         .eq('company_id', companyId)
+        .not('expiry_date', 'is', null)
+        .neq('status', 'discarded'),
+      // Lotti di semilavorati attivi: avvisi prioritari sulla scadenza del lotto.
+      admin
+        .from('semi_product_batches')
+        .select('id, product_name, lot, expiry_date, quantity_remaining, unit, status')
+        .eq('company_id', companyId)
+        .eq('status', 'active')
         .not('expiry_date', 'is', null),
       includePest
         ? admin
@@ -141,16 +179,18 @@ async function loadInputs(
     ]);
 
   const firstError =
-    equipment.error || records.error || foods.error ||
+    equipment.error || records.error || foods.error || semiBatches.error ||
     schedules.error || documents.error || stations.error ||
     inspections.error || interventions.error || actions.error;
   if (firstError) throw new HttpError(500, 'Errore lettura dati per gli avvisi', 'db_error');
 
   return {
     today,
+    rules,
     equipment: (equipment.data ?? []) as AlertInputs['equipment'],
     records: (records.data ?? []) as AlertInputs['records'],
     incomingFoods: (foods.data ?? []) as AlertInputs['incomingFoods'],
+    semiBatches: (semiBatches.data ?? []) as AlertInputs['semiBatches'],
     pestSchedules: (schedules.data ?? []) as AlertInputs['pestSchedules'],
     pestDocuments: (documents.data ?? []) as AlertInputs['pestDocuments'],
     pestStations: (stations.data ?? []) as AlertInputs['pestStations'],
@@ -168,7 +208,8 @@ function todayUtc(): string {
 async function handleList(ctx: GuardContext): Promise<Response> {
   const today = todayUtc();
   const features = await loadFeatures(ctx.admin, ctx.companyId);
-  const inputs = await loadInputs(ctx.admin, ctx.companyId, today, features.has('pest_control'));
+  const rules = await loadRules(ctx.admin, ctx.companyId);
+  const inputs = await loadInputs(ctx.admin, ctx.companyId, today, features.has('pest_control'), rules);
   const alerts = computeAlerts(inputs);
 
   const { data: reads } = await ctx.admin
@@ -198,7 +239,8 @@ async function handleMarkRead(ctx: GuardContext, body: Record<string, unknown>):
   if (!keys) {
     const today = todayUtc();
     const features = await loadFeatures(ctx.admin, ctx.companyId);
-    const inputs = await loadInputs(ctx.admin, ctx.companyId, today, features.has('pest_control'));
+    const rules = await loadRules(ctx.admin, ctx.companyId);
+    const inputs = await loadInputs(ctx.admin, ctx.companyId, today, features.has('pest_control'), rules);
     keys = computeAlerts(inputs).map((a) => a.key).slice(0, 500);
   }
 
@@ -277,7 +319,8 @@ async function handleDispatch(req: Request): Promise<Response> {
     let alerts: AlertItem[];
     try {
       const features = await loadFeatures(admin, companyId);
-      const inputs = await loadInputs(admin, companyId, today, features.has('pest_control'));
+      const rules = await loadRules(admin, companyId);
+      const inputs = await loadInputs(admin, companyId, today, features.has('pest_control'), rules);
       alerts = computeAlerts(inputs);
     } catch (err) {
       console.error('[alerts.dispatch] company failed', companyId, err);

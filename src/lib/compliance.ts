@@ -36,6 +36,7 @@ export const DEFAULT_PERIOD_DAYS = 30;
 /** Descrizione leggibile di ogni categoria del motore di avvisi. */
 export const ALERT_CATEGORY_LABELS: Record<AlertCategory, string> = {
   temperature: 'Temperature fuori range',
+  semilavorati: 'Semilavorati in scadenza',
   lotti: 'Lotti in scadenza',
   pest_piano: 'Piano di controllo infestanti',
   pest_certificazioni: 'Certificazioni ditte esterne',
@@ -45,6 +46,7 @@ export const ALERT_CATEGORY_LABELS: Record<AlertCategory, string> = {
 /** Area dell'app di riferimento per categoria (deep-link dal cruscotto). */
 export const ALERT_CATEGORY_TABS: Record<AlertCategory, string> = {
   temperature: 'daily',
+  semilavorati: 'semilavorati',
   lotti: 'ingresso',
   pest_piano: 'infestanti',
   pest_certificazioni: 'infestanti',
@@ -277,7 +279,8 @@ export function findExpiringLots(
   days: number,
 ): ExpiringLot[] {
   return items
-    .filter((item) => Boolean(item.dataScadenza))
+    // Solo le scorte attive: archiviate/scartate non generano più avvisi di scadenza.
+    .filter((item) => (item.stato ?? 'active') === 'active' && Boolean(item.dataScadenza))
     .map((item) => ({
       id: item.id,
       nome: item.nome,

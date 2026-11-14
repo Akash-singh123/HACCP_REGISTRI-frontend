@@ -70,6 +70,13 @@ function makeIncoming(overrides: Partial<IncomingFoodRow>): IncomingFoodRow {
     dataAcquisto: '2025-06-01',
     dataScadenza: '',
     fornitore: 'Fornitore',
+    quantita: null,
+    quantitaResidua: null,
+    unita: '',
+    categoria: '',
+    stato: 'active',
+    archiviatoIl: null,
+    scartatoIl: null,
     createdAt: 0,
     ...overrides,
   };

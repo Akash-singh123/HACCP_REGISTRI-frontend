@@ -434,7 +434,9 @@ export default function HaccpDashboard() {
       <div className="mx-auto flex w-full max-w-7xl gap-6 px-4 pt-6 sm:px-6 lg:px-8">
         {/* Navigazione laterale (desktop): ogni categoria è una scheda autonoma. */}
         <aside className="hidden w-72 shrink-0 lg:block">
-          <div className="sticky top-24">
+          {/* Altezza limitata alla viewport e scroll interno: così anche su tablet
+              in orizzontale tutte le voci (fino a "Sistema") restano raggiungibili. */}
+          <div className="sticky top-24 max-h-[calc(100dvh-7rem)] overflow-y-auto overscroll-contain pr-1">
             <DashboardSidebar
               groups={navGroups}
               activeKey={activeTab}

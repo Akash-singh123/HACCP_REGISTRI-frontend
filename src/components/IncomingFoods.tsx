@@ -9,19 +9,57 @@ import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { toast } from 'sonner';
-import { Trash2, Save, Pencil, Plus, Upload, Download, ScanLine, Camera, PackageOpen, Truck, CalendarClock } from 'lucide-react';
+import {
+  Archive,
+  ArchiveRestore,
+  Camera,
+  CalendarClock,
+  Download,
+  MoreVertical,
+  PackageOpen,
+  PackageX,
+  Pencil,
+  Plus,
+  Save,
+  ScanLine,
+  Truck,
+  Upload,
+} from 'lucide-react';
 import { Popover, PopoverTrigger, PopoverContent } from '@/components/ui/popover';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { Command, CommandInput, CommandList, CommandEmpty, CommandGroup, CommandItem } from '@/components/ui/command';
 import { DOC_FOLDERS, readTextFile, writeTextFile } from '@/lib/docs';
 import BarcodeScannerDialog from '@/components/BarcodeScannerDialog';
 import LabelScanDialog from '@/components/LabelScanDialog';
 import { useConfirm } from '@/components/ConfirmDialog';
+import { useAuth } from '@/hooks/useAuth';
+import { readExpiryRules, type StockStatus } from '@/lib/api';
 import { parseBarcode } from '@/lib/barcode';
 import { cn } from '@/lib/utils';
 
 const REGISTRY_FILE = 'Registro_Alimenti_Ingresso.csv';
 
-const EMPTY_FORM = { nome: '', dataAcquisto: '', lotto: '', dataScadenza: '', fornitore: '' };
+const EMPTY_FORM = {
+  nome: '',
+  dataAcquisto: '',
+  lotto: '',
+  dataScadenza: '',
+  fornitore: '',
+  quantita: '',
+  unita: '',
+  categoria: '',
+};
+
+/** Filtri del ciclo di vita mostrati come chip sopra l'archivio. */
+type StockFilter = 'attivi' | 'inScadenza' | 'scaduti' | 'archiviati' | 'scartati';
+
+const FILTER_LABELS: Record<StockFilter, string> = {
+  attivi: 'Attivi',
+  inScadenza: 'In scadenza',
+  scaduti: 'Scaduti',
+  archiviati: 'Archiviati',
+  scartati: 'Scartati',
+};
 
 /** Giorni mancanti alla scadenza (null se non impostata o non valida). */
 function daysToExpiry(value?: string): number | null {
@@ -34,9 +72,42 @@ function daysToExpiry(value?: string): number | null {
   return Math.round((d.getTime() - today.getTime()) / 86_400_000);
 }
 
+/** Converte il campo quantità (accetta la virgola decimale) in numero. */
+function parseQuantity(value: string): number | null {
+  const t = value.trim().replace(',', '.');
+  if (!t) return null;
+  const n = Number(t);
+  return Number.isFinite(n) ? n : null;
+}
+
+/** True se la voce rientra nel filtro di stato selezionato. */
+function matchesFilter(item: IncomingFood, filter: StockFilter, warnDays: number): boolean {
+  const stato = item.stato ?? 'active';
+  const days = daysToExpiry(item.dataScadenza);
+  switch (filter) {
+    case 'attivi':
+      return stato === 'active';
+    case 'inScadenza':
+      return stato === 'active' && days !== null && days >= 0 && days <= warnDays;
+    case 'scaduti':
+      return stato === 'active' && days !== null && days < 0;
+    case 'archiviati':
+      return stato === 'archived';
+    case 'scartati':
+      return stato === 'discarded';
+  }
+}
+
+const STATUS_BADGE: Record<StockStatus, { label: string; className: string }> = {
+  active: { label: 'Attivo', className: 'border-info/30 bg-info/10 text-info' },
+  archived: { label: 'Archiviato', className: 'border-border bg-muted text-muted-foreground' },
+  discarded: { label: 'Scartato', className: 'border-destructive/30 bg-destructive/10 text-destructive' },
+};
+
 export default function IncomingFoods() {
-  const { items, addItem, updateItem, removeItem, load } = useIncomingFoodsStore();
+  const { items, addItem, updateItem, setStatus, load } = useIncomingFoodsStore();
   const { templates, load: loadSemi } = useSemiProductsStore();
+  const { company } = useAuth();
   const { confirm, confirmDialog } = useConfirm();
   const [form, setForm] = useState({ ...EMPTY_FORM });
   const [editId, setEditId] = useState<string | null>(null);
@@ -44,10 +115,34 @@ export default function IncomingFoods() {
   const [nameQuery, setNameQuery] = useState('');
   const [scannerOpen, setScannerOpen] = useState(false);
   const [labelOpen, setLabelOpen] = useState(false);
+  const [statusFilter, setStatusFilter] = useState<StockFilter>('attivi');
 
   useEffect(() => { load(); }, [load]);
   // Assicura che i semilavorati siano caricati per avere gli ingredienti aggiornati
   useEffect(() => { loadSemi(); }, [loadSemi]);
+
+  // Soglia di avviso configurabile per azienda (default 30 giorni per gli alimenti).
+  const warnDays = useMemo(() => readExpiryRules(company?.settings).incoming.warnDays, [company?.settings]);
+
+  // Conteggio per filtro: un'unica passata sui dati.
+  const counts = useMemo(() => {
+    const result: Record<StockFilter, number> = { attivi: 0, inScadenza: 0, scaduti: 0, archiviati: 0, scartati: 0 };
+    for (const item of items) {
+      const stato = item.stato ?? 'active';
+      if (stato === 'archived') { result.archiviati += 1; continue; }
+      if (stato === 'discarded') { result.scartati += 1; continue; }
+      result.attivi += 1;
+      const days = daysToExpiry(item.dataScadenza);
+      if (days !== null && days < 0) result.scaduti += 1;
+      else if (days !== null && days <= warnDays) result.inScadenza += 1;
+    }
+    return result;
+  }, [items, warnDays]);
+
+  const visibleItems = useMemo(
+    () => items.filter((item) => matchesFilter(item, statusFilter, warnDays)),
+    [items, statusFilter, warnDays],
+  );
 
   const grouped = useMemo(() => {
     const map = new Map<string, IncomingFood[]>();
@@ -106,12 +201,24 @@ export default function IncomingFoods() {
     }
     try {
       const dataScadenza = form.dataScadenza || undefined;
+      const quantita = parseQuantity(form.quantita);
+      const base = {
+        nome: form.nome.trim(),
+        dataAcquisto: form.dataAcquisto,
+        lotto: form.lotto.trim(),
+        dataScadenza,
+        fornitore: form.fornitore.trim() || undefined,
+        quantita,
+        unita: form.unita.trim() || undefined,
+        categoria: form.categoria.trim() || undefined,
+      };
       if (editId) {
-        await updateItem(editId, { nome: form.nome.trim(), dataAcquisto: form.dataAcquisto, lotto: form.lotto.trim(), dataScadenza, fornitore: form.fornitore.trim() || undefined });
+        await updateItem(editId, base);
         toast.success('Alimento aggiornato');
         setEditId(null);
       } else {
-        await addItem({ nome: form.nome.trim(), dataAcquisto: form.dataAcquisto, lotto: form.lotto.trim(), dataScadenza, fornitore: form.fornitore.trim() || undefined });
+        // Alla creazione la quantità residua coincide con quella iniziale.
+        await addItem({ ...base, quantitaResidua: quantita });
         toast.success('Alimento registrato');
       }
       resetForm();
@@ -123,23 +230,57 @@ export default function IncomingFoods() {
 
   const onEdit = (it: IncomingFood) => {
     setEditId(it.id);
-    setForm({ nome: it.nome, dataAcquisto: it.dataAcquisto, lotto: it.lotto, dataScadenza: it.dataScadenza || '', fornitore: it.fornitore || '' });
+    setForm({
+      nome: it.nome,
+      dataAcquisto: it.dataAcquisto,
+      lotto: it.lotto,
+      dataScadenza: it.dataScadenza || '',
+      fornitore: it.fornitore || '',
+      quantita: it.quantita != null ? String(it.quantita) : '',
+      unita: it.unita || '',
+      categoria: it.categoria || '',
+    });
   };
 
-  const onDelete = (it: IncomingFood) => {
+  /**
+   * Cambia lo stato del ciclo di vita SENZA cancellare nulla (tracciabilità
+   * HACCP): archiviazione, scarto e ripristino.
+   */
+  const onSetStatus = (it: IncomingFood, stato: StockStatus) => {
+    const meta: Record<StockStatus, { title: string; description: string; confirmLabel: string; success: string }> = {
+      active: {
+        title: 'Ripristinare questo alimento?',
+        description: `${it.nome} · lotto ${it.lotto} tornerà tra gli alimenti attivi.`,
+        confirmLabel: 'Ripristina',
+        success: 'Alimento ripristinato',
+      },
+      archived: {
+        title: 'Archiviare questo alimento?',
+        description: `${it.nome} · lotto ${it.lotto} verrà spostato in archivio. Nessuna cancellazione: resterà consultabile.`,
+        confirmLabel: 'Archivia',
+        success: 'Alimento archiviato',
+      },
+      discarded: {
+        title: 'Scartare questo alimento?',
+        description: `${it.nome} · lotto ${it.lotto} verrà marcato come scartato. Nessuna cancellazione: resterà per la tracciabilità.`,
+        confirmLabel: 'Scarta',
+        success: 'Alimento scartato',
+      },
+    };
+    const m = meta[stato];
     confirm({
-      title: 'Eliminare questo alimento?',
-      description: `${it.nome} · lotto ${it.lotto}. L'operazione non può essere annullata.`,
-      confirmLabel: 'Elimina',
-      destructive: true,
+      title: m.title,
+      description: m.description,
+      confirmLabel: m.confirmLabel,
+      destructive: stato === 'discarded',
       onConfirm: async () => {
         try {
-          await removeItem(it.id);
-          toast.success('Alimento eliminato');
-          if (editId === it.id) resetForm();
+          await setStatus(it.id, stato);
+          toast.success(m.success);
+          if (editId === it.id && stato !== 'active') resetForm();
         } catch (e) {
           console.error(e);
-          toast.error('Errore durante l\'eliminazione');
+          toast.error('Errore durante l\'aggiornamento dello stato');
         }
       },
     });
@@ -174,6 +315,9 @@ export default function IncomingFoods() {
       lotto: patch.lotto ?? f.lotto,
       dataScadenza: patch.dataScadenza ?? f.dataScadenza,
       fornitore: patch.fornitore ?? f.fornitore,
+      quantita: f.quantita,
+      unita: f.unita,
+      categoria: f.categoria,
     }));
   };
 
@@ -228,13 +372,56 @@ export default function IncomingFoods() {
     }
   };
 
-  const expiringSoon = useMemo(
-    () => items.filter((i) => {
-      const d = daysToExpiry(i.dataScadenza);
-      return d !== null && d >= 0 && d <= 7;
-    }).length,
-    [items]
-  );
+  /** Formatta la quantità tracciata (iniziale → residua) con l'unità. */
+  const formatQuantity = (it: IncomingFood) => {
+    if (it.quantita == null && it.quantitaResidua == null) return null;
+    const unit = it.unita ? ` ${it.unita}` : '';
+    const residua = it.quantitaResidua ?? it.quantita;
+    if (it.quantita != null && residua != null && residua !== it.quantita) {
+      return `${residua}${unit} / ${it.quantita}${unit}`;
+    }
+    return `${residua ?? it.quantita}${unit}`;
+  };
+
+  const renderActions = (it: IncomingFood) => {
+    const stato = it.stato ?? 'active';
+    return (
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button variant="ghost" size="icon" title="Azioni" aria-label={`Azioni per ${it.nome}`}>
+            <MoreVertical className="h-4 w-4" />
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end" className="w-48">
+          <DropdownMenuItem onSelect={() => onEdit(it)}>
+            <Pencil className="h-4 w-4" />
+            Modifica
+          </DropdownMenuItem>
+          <DropdownMenuSeparator />
+          {stato === 'active' ? (
+            <DropdownMenuItem onSelect={() => onSetStatus(it, 'archived')}>
+              <Archive className="h-4 w-4" />
+              Archivia
+            </DropdownMenuItem>
+          ) : (
+            <DropdownMenuItem onSelect={() => onSetStatus(it, 'active')}>
+              <ArchiveRestore className="h-4 w-4" />
+              Ripristina
+            </DropdownMenuItem>
+          )}
+          {stato !== 'discarded' && (
+            <DropdownMenuItem
+              className="text-destructive focus:text-destructive"
+              onSelect={() => onSetStatus(it, 'discarded')}
+            >
+              <PackageX className="h-4 w-4" />
+              Scarta
+            </DropdownMenuItem>
+          )}
+        </DropdownMenuContent>
+      </DropdownMenu>
+    );
+  };
 
   return (
     <div className="space-y-6">
@@ -325,6 +512,18 @@ export default function IncomingFoods() {
               <Label className="field-label">Fornitore</Label>
               <Input value={form.fornitore} onChange={e => setForm(f => ({ ...f, fornitore: e.target.value }))} placeholder="es. Fornitore Srl" />
             </div>
+            <div>
+              <Label className="field-label">Quantità</Label>
+              <Input value={form.quantita} onChange={e => setForm(f => ({ ...f, quantita: e.target.value }))} placeholder="es. 2,5" />
+            </div>
+            <div>
+              <Label className="field-label">Unità</Label>
+              <Input value={form.unita} onChange={e => setForm(f => ({ ...f, unita: e.target.value }))} placeholder="es. kg / L / pz" />
+            </div>
+            <div className="md:col-span-2">
+              <Label className="field-label">Categoria</Label>
+              <Input value={form.categoria} onChange={e => setForm(f => ({ ...f, categoria: e.target.value }))} placeholder="es. Latticini" />
+            </div>
           </div>
 
           <div className="flex flex-wrap gap-2">
@@ -356,10 +555,15 @@ export default function IncomingFoods() {
               <div>
                 <CardTitle>Archivio alimenti</CardTitle>
                 <CardDescription>
-                  {items.length} aliment{items.length === 1 ? 'o' : 'i'} registrat{items.length === 1 ? 'o' : 'i'}
-                  {expiringSoon > 0 && (
+                  {counts.attivi} aliment{counts.attivi === 1 ? 'o' : 'i'} in uso
+                  {counts.inScadenza > 0 && (
                     <span className="ml-2 inline-flex items-center gap-1 font-medium text-warning">
-                      <CalendarClock className="h-3.5 w-3.5" /> {expiringSoon} in scadenza
+                      <CalendarClock className="h-3.5 w-3.5" /> {counts.inScadenza} in scadenza
+                    </span>
+                  )}
+                  {counts.scaduti > 0 && (
+                    <span className="ml-2 inline-flex items-center gap-1 font-medium text-destructive">
+                      <CalendarClock className="h-3.5 w-3.5" /> {counts.scaduti} scadut{counts.scaduti === 1 ? 'o' : 'i'}
                     </span>
                   )}
                 </CardDescription>
@@ -375,14 +579,46 @@ export default function IncomingFoods() {
             </div>
           </div>
         </CardHeader>
-        <CardContent className="pt-5">
+
+        <CardContent className="space-y-4 pt-5">
+          {/* Filtri per stato del ciclo di vita */}
+          <div className="flex flex-wrap items-center gap-2">
+            {(Object.keys(FILTER_LABELS) as StockFilter[]).map((key) => {
+              const active = statusFilter === key;
+              return (
+                <button
+                  key={key}
+                  type="button"
+                  onClick={() => setStatusFilter(key)}
+                  className={cn(
+                    'inline-flex items-center gap-2 rounded-full border px-3.5 py-1.5 text-sm font-medium transition-all',
+                    active
+                      ? 'border-transparent bg-primary text-primary-foreground shadow-sm'
+                      : 'border-border bg-card text-foreground hover:border-primary/40 hover:bg-accent',
+                  )}
+                >
+                  {FILTER_LABELS[key]}
+                  <span
+                    className={cn(
+                      'rounded-full px-1.5 py-0.5 text-[11px] font-semibold leading-none',
+                      active ? 'bg-white/20' : 'bg-muted text-muted-foreground',
+                    )}
+                  >
+                    {counts[key]}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+
           {/* Vista tabella (desktop) */}
           <div className="hidden overflow-x-auto md:block">
-            <Table className="min-w-[640px]">
+            <Table className="min-w-[720px]">
               <TableHeader>
                 <TableRow>
                   <TableHead>Nome alimento</TableHead>
                   <TableHead>Lotto</TableHead>
+                  <TableHead>Quantità</TableHead>
                   <TableHead>Data di acquisto</TableHead>
                   <TableHead>Scadenza</TableHead>
                   <TableHead>Fornitore</TableHead>
@@ -390,43 +626,49 @@ export default function IncomingFoods() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {items.length === 0 ? (
+                {visibleItems.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={6} className="py-10 text-center text-muted-foreground">
-                      Nessun alimento registrato
+                    <TableCell colSpan={7} className="py-10 text-center text-muted-foreground">
+                      Nessun alimento in questa vista
                     </TableCell>
                   </TableRow>
                 ) : (
-                  items.map(it => {
+                  visibleItems.map(it => {
                     const days = daysToExpiry(it.dataScadenza);
-                    const soon = days !== null && days >= 0 && days <= 7;
+                    const soon = days !== null && days >= 0 && days <= warnDays;
                     const expired = days !== null && days < 0;
+                    const stato = it.stato ?? 'active';
                     return (
                       <TableRow key={it.id} className={cn(editId === it.id && 'bg-primary/5')}>
-                        <TableCell className="font-medium">{it.nome}</TableCell>
+                        <TableCell className="font-medium">
+                          <div className="flex items-center gap-2">
+                            <span>{it.nome}</span>
+                            {stato !== 'active' && (
+                              <Badge variant="outline" className={STATUS_BADGE[stato].className}>
+                                {STATUS_BADGE[stato].label}
+                              </Badge>
+                            )}
+                          </div>
+                        </TableCell>
                         <TableCell><span className="rounded-md bg-muted px-2 py-0.5 font-mono text-xs">{it.lotto}</span></TableCell>
+                        <TableCell>{formatQuantity(it) ?? <span className="text-muted-foreground">—</span>}</TableCell>
                         <TableCell>{new Date(it.dataAcquisto).toLocaleDateString('it-IT')}</TableCell>
                         <TableCell>
                           {it.dataScadenza ? (
                             <span className={cn(
                               'inline-flex items-center gap-1.5 text-sm',
-                              expired && 'font-medium text-destructive',
-                              soon && !expired && 'font-medium text-warning'
+                              expired && stato === 'active' && 'font-medium text-destructive',
+                              soon && !expired && stato === 'active' && 'font-medium text-warning'
                             )}>
                               {new Date(it.dataScadenza).toLocaleDateString('it-IT')}
-                              {expired && <Badge variant="outline" className="border-destructive/30 bg-destructive/10 text-destructive">scaduto</Badge>}
-                              {soon && !expired && <Badge variant="outline" className="border-warning/30 bg-warning/10 text-warning">{days}g</Badge>}
+                              {expired && stato === 'active' && <Badge variant="outline" className="border-destructive/30 bg-destructive/10 text-destructive">scaduto</Badge>}
+                              {soon && !expired && stato === 'active' && <Badge variant="outline" className="border-warning/30 bg-warning/10 text-warning">{days}g</Badge>}
                             </span>
                           ) : <span className="text-muted-foreground">—</span>}
                         </TableCell>
                         <TableCell>{it.fornitore || <span className="text-muted-foreground">—</span>}</TableCell>
                         <TableCell className="text-right">
-                          <Button variant="ghost" size="icon" onClick={() => onEdit(it)} title="Modifica">
-                            <Pencil className="h-4 w-4" />
-                          </Button>
-                          <Button variant="ghost" size="icon" onClick={() => onDelete(it)} title="Elimina" className="text-destructive hover:text-destructive">
-                            <Trash2 className="h-4 w-4" />
-                          </Button>
+                          {renderActions(it)}
                         </TableCell>
                       </TableRow>
                     );
@@ -438,31 +680,40 @@ export default function IncomingFoods() {
 
           {/* Vista card (mobile) */}
           <div className="space-y-3 md:hidden">
-            {items.length === 0 ? (
-              <p className="py-8 text-center text-muted-foreground">Nessun alimento registrato</p>
+            {visibleItems.length === 0 ? (
+              <p className="py-8 text-center text-muted-foreground">Nessun alimento in questa vista</p>
             ) : (
-              items.map(it => {
+              visibleItems.map(it => {
                 const days = daysToExpiry(it.dataScadenza);
-                const soon = days !== null && days >= 0 && days <= 7;
+                const soon = days !== null && days >= 0 && days <= warnDays;
                 const expired = days !== null && days < 0;
+                const stato = it.stato ?? 'active';
                 return (
                   <div key={it.id} className={cn('rounded-xl border bg-card p-4', editId === it.id && 'ring-1 ring-primary/40')}>
                     <div className="flex items-start justify-between gap-2">
                       <div className="min-w-0">
                         <p className="truncate font-semibold">{it.nome}</p>
                         <p className="mt-0.5 font-mono text-xs text-muted-foreground">{it.lotto}</p>
+                        {stato !== 'active' && (
+                          <Badge variant="outline" className={cn('mt-1.5', STATUS_BADGE[stato].className)}>
+                            {STATUS_BADGE[stato].label}
+                          </Badge>
+                        )}
                       </div>
-                      <div className="flex shrink-0 gap-1">
-                        <Button variant="ghost" size="icon" className="h-11 w-11" onClick={() => onEdit(it)}><Pencil className="h-4 w-4" /></Button>
-                        <Button variant="ghost" size="icon" onClick={() => onDelete(it)} className="h-11 w-11 text-destructive hover:text-destructive"><Trash2 className="h-4 w-4" /></Button>
-                      </div>
+                      <div className="shrink-0">{renderActions(it)}</div>
                     </div>
                     <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
                       <span>Acquisto {new Date(it.dataAcquisto).toLocaleDateString('it-IT')}</span>
+                      {formatQuantity(it) && (
+                        <>
+                          <span aria-hidden>·</span>
+                          <span>Q.tà {formatQuantity(it)}</span>
+                        </>
+                      )}
                       {it.dataScadenza && (
                         <>
                           <span aria-hidden>·</span>
-                          <span className={cn(expired && 'font-medium text-destructive', soon && !expired && 'font-medium text-warning')}>
+                          <span className={cn(expired && stato === 'active' && 'font-medium text-destructive', soon && !expired && stato === 'active' && 'font-medium text-warning')}>
                             Scad. {new Date(it.dataScadenza).toLocaleDateString('it-IT')}
                           </span>
                         </>
@@ -476,8 +727,8 @@ export default function IncomingFoods() {
           </div>
 
           {grouped.size > 0 && (
-            <p className="mt-4 text-xs text-muted-foreground">
-              {grouped.size} prodott{grouped.size === 1 ? 'o' : 'i'} distint{grouped.size === 1 ? 'o' : 'i'} in archivio.
+            <p className="text-xs text-muted-foreground">
+              {grouped.size} prodott{grouped.size === 1 ? 'o' : 'i'} distint{grouped.size === 1 ? 'o' : 'i'} nel registro.
             </p>
           )}
         </CardContent>

@@ -67,6 +67,45 @@ function mapRecord(r: RecordRow) {
   };
 }
 
+interface BatchRow {
+  id: string;
+  product_name: string;
+  lot: string | null;
+  produced_on: string | null;
+  expiry_date: string | null;
+  quantity_initial: number | null;
+  quantity_remaining: number | null;
+  unit: string | null;
+  ingredients: unknown;
+  notes: string | null;
+  status: string;
+  archived_at: string | null;
+  discarded_at: string | null;
+  created_at: string;
+}
+
+function mapBatch(r: BatchRow) {
+  return {
+    id: r.id,
+    prodotto: r.product_name,
+    lotto: r.lot ?? '',
+    dataProduzione: r.produced_on ?? '',
+    dataScadenza: r.expiry_date ?? '',
+    quantitaIniziale: r.quantity_initial ?? null,
+    quantitaResidua: r.quantity_remaining ?? null,
+    unita: r.unit ?? '',
+    ingredienti: Array.isArray(r.ingredients) ? r.ingredients : [],
+    note: r.notes ?? '',
+    stato: (r.status ?? 'active') as 'active' | 'archived' | 'discarded',
+    archiviatoIl: r.archived_at ?? null,
+    scartatoIl: r.discarded_at ?? null,
+    createdAt: r.created_at ? new Date(r.created_at).getTime() : 0,
+  };
+}
+
+const BATCH_COLUMNS =
+  'id, product_name, lot, produced_on, expiry_date, quantity_initial, quantity_remaining, unit, ingredients, notes, status, archived_at, discarded_at, created_at';
+
 /**
  * Scrive in blocco un elenco di registri giornalieri per l'azienda indicata.
  * L'upsert è idempotente sulla chiave (azienda, data). Ritorna il numero di righe.
@@ -243,7 +282,7 @@ Deno.serve(async (req: Request) => {
         await assertFeature(ctx, 'allergeni');
         const { data, error } = await ctx.admin
           .from('incoming_foods')
-          .select('id, name, lot, purchase_date, expiry_date, supplier, created_at')
+          .select('id, name, lot, purchase_date, expiry_date, supplier, quantity_initial, quantity_remaining, unit, category, status, archived_at, discarded_at, created_at')
           .eq('company_id', ctx.companyId)
           .order('purchase_date', { ascending: true });
         if (error) throw new HttpError(500, 'Errore lettura materie prime', 'db_error');
@@ -255,6 +294,13 @@ Deno.serve(async (req: Request) => {
             dataAcquisto: r.purchase_date ?? '',
             dataScadenza: r.expiry_date ?? '',
             fornitore: r.supplier ?? '',
+            quantita: r.quantity_initial ?? null,
+            quantitaResidua: r.quantity_remaining ?? null,
+            unita: r.unit ?? '',
+            categoria: r.category ?? '',
+            stato: (r.status ?? 'active') as 'active' | 'archived' | 'discarded',
+            archiviatoIl: r.archived_at ?? null,
+            scartatoIl: r.discarded_at ?? null,
             createdAt: r.created_at ? new Date(r.created_at).getTime() : 0,
           })),
         });
@@ -266,15 +312,36 @@ Deno.serve(async (req: Request) => {
         const nome = String(body.nome ?? '').trim();
         if (!nome) throw new HttpError(400, 'Il nome è obbligatorio', 'bad_name');
 
-        const payload = {
+        const numOrNull = (v: unknown): number | null => {
+          if (v === null || v === undefined || v === '') return null;
+          const n = Number(v);
+          return Number.isFinite(n) ? n : null;
+        };
+
+        const quantita = numOrNull(body.quantita);
+        const quantitaResidua = numOrNull(body.quantitaResidua);
+
+        const payload: Record<string, unknown> = {
           company_id: ctx.companyId,
           name: nome.slice(0, 200),
           lot: body.lotto ? String(body.lotto).slice(0, 100) : null,
           purchase_date: body.dataAcquisto ? String(body.dataAcquisto) : null,
           expiry_date: body.dataScadenza ? String(body.dataScadenza) : null,
           supplier: body.fornitore ? String(body.fornitore).slice(0, 200) : null,
+          quantity_initial: quantita,
+          // Se non specificata, la quantità residua parte dal valore iniziale.
+          quantity_remaining: quantitaResidua ?? quantita,
+          unit: body.unita ? String(body.unita).slice(0, 20) : null,
+          category: body.categoria ? String(body.categoria).slice(0, 80) : null,
           updated_at: new Date().toISOString(),
         };
+
+        const stato = String(body.stato ?? '');
+        if (stato === 'active' || stato === 'archived' || stato === 'discarded') {
+          payload.status = stato;
+          payload.archived_at = stato === 'archived' ? new Date().toISOString() : null;
+          payload.discarded_at = stato === 'discarded' ? new Date().toISOString() : null;
+        }
 
         if (body.id) {
           const { data, error } = await ctx.admin
@@ -298,6 +365,37 @@ Deno.serve(async (req: Request) => {
         if (error) throw new HttpError(500, 'Errore creazione', 'db_error');
         await audit(ctx, 'incoming.create', 'incoming_foods', data.id);
         return json({ id: data.id });
+      }
+
+      // Cambio di stato del ciclo di vita SENZA cancellare la riga:
+      // 'active' | 'archived' (storico) | 'discarded' (scartato). Preserva la
+      // tracciabilità richiesta dalla normativa HACCP.
+      case 'incoming.setStatus': {
+        await assertFeature(ctx, 'allergeni');
+        requireWrite(ctx);
+        const id = String(body.id ?? '');
+        const stato = String(body.stato ?? '');
+        if (!id) throw new HttpError(400, 'Voce non specificata', 'bad_id');
+        if (!['active', 'archived', 'discarded'].includes(stato)) {
+          throw new HttpError(400, 'Stato non valido', 'bad_status');
+        }
+        const now = new Date().toISOString();
+        const { data, error } = await ctx.admin
+          .from('incoming_foods')
+          .update({
+            status: stato,
+            archived_at: stato === 'archived' ? now : null,
+            discarded_at: stato === 'discarded' ? now : null,
+            updated_at: now,
+          })
+          .eq('id', id)
+          .eq('company_id', ctx.companyId)
+          .select('id')
+          .maybeSingle();
+        if (error) throw new HttpError(500, 'Errore aggiornamento stato', 'db_error');
+        if (!data) throw new HttpError(404, 'Voce non trovata', 'not_found');
+        await audit(ctx, `incoming.setStatus.${stato}`, 'incoming_foods', id);
+        return json({ id: data.id, stato });
       }
 
       case 'incoming.delete': {
@@ -350,6 +448,100 @@ Deno.serve(async (req: Request) => {
         if (error) throw new HttpError(500, 'Errore salvataggio modelli', 'db_error');
         await audit(ctx, 'semi.save', 'app_settings', 'semi_products');
         return json({ ok: true });
+      }
+
+      // ------------------------------------------------ SEMI: LOTTI DI PRODUZIONE
+      // Ogni produzione registrata è una riga tracciabile (scadenze, avvisi,
+      // archiviazione). Il CSV su Storage resta il documento ufficiale.
+      case 'semi.batches.list': {
+        await assertFeature(ctx, 'allergeni');
+        const { data, error } = await ctx.admin
+          .from('semi_product_batches')
+          .select(BATCH_COLUMNS)
+          .eq('company_id', ctx.companyId)
+          .order('produced_on', { ascending: false })
+          .order('created_at', { ascending: false });
+        if (error) throw new HttpError(500, 'Errore lettura lotti semilavorati', 'db_error');
+        return json({ items: (data ?? []).map((r) => mapBatch(r as BatchRow)) });
+      }
+
+      case 'semi.batches.upsert': {
+        await assertFeature(ctx, 'allergeni');
+        requireWrite(ctx);
+
+        const prodotto = String(body.prodotto ?? '').trim();
+        const lotto = String(body.lotto ?? '').trim();
+        if (!prodotto) throw new HttpError(400, 'Il prodotto è obbligatorio', 'bad_product');
+        if (!lotto) throw new HttpError(400, 'Il lotto è obbligatorio', 'bad_lot');
+
+        const numOrNull = (v: unknown): number | null => {
+          if (v === null || v === undefined || v === '') return null;
+          const n = Number(v);
+          return Number.isFinite(n) ? n : null;
+        };
+        const quantitaIniziale = numOrNull(body.quantitaIniziale);
+        const quantitaResidua = numOrNull(body.quantitaResidua);
+
+        const payload: Record<string, unknown> = {
+          company_id: ctx.companyId,
+          product_name: prodotto.slice(0, 200),
+          lot: lotto.slice(0, 120),
+          produced_on: body.dataProduzione ? String(body.dataProduzione) : null,
+          expiry_date: body.dataScadenza ? String(body.dataScadenza) : null,
+          quantity_initial: quantitaIniziale,
+          quantity_remaining: quantitaResidua ?? quantitaIniziale,
+          unit: body.unita ? String(body.unita).slice(0, 20) : null,
+          ingredients: Array.isArray(body.ingredienti) ? body.ingredienti : [],
+          notes: body.note ? String(body.note).slice(0, MAX_NOTES) : null,
+          updated_at: new Date().toISOString(),
+        };
+
+        // Il lotto è unico per azienda: l'upsert è idempotente sulla coppia.
+        const { data, error } = await ctx.admin
+          .from('semi_product_batches')
+          .upsert(payload, { onConflict: 'company_id,lot' })
+          .select(BATCH_COLUMNS)
+          .single();
+        if (error) throw new HttpError(500, 'Errore salvataggio lotto semilavorato', 'db_error');
+        await audit(ctx, 'semi.batch.upsert', 'semi_product_batches', (data as BatchRow).id);
+        return json({ item: mapBatch(data as BatchRow) });
+      }
+
+      // Consumo (riduzione quantità residua) e scarto: nessuna cancellazione.
+      case 'semi.batches.update': {
+        await assertFeature(ctx, 'allergeni');
+        requireWrite(ctx);
+        const id = String(body.id ?? '');
+        if (!id) throw new HttpError(400, 'Lotto non specificato', 'bad_id');
+
+        const patch: Record<string, unknown> = { updated_at: new Date().toISOString() };
+        if (body.quantitaResidua !== undefined) {
+          const n = Number(body.quantitaResidua);
+          if (!Number.isFinite(n) || n < 0) throw new HttpError(400, 'Quantità residua non valida', 'bad_qty');
+          patch.quantity_remaining = n;
+        }
+        if (body.note !== undefined) {
+          patch.notes = body.note ? String(body.note).slice(0, MAX_NOTES) : null;
+        }
+        const stato = String(body.stato ?? '');
+        if (stato === 'active' || stato === 'archived' || stato === 'discarded') {
+          const now = new Date().toISOString();
+          patch.status = stato;
+          patch.archived_at = stato === 'archived' ? now : null;
+          patch.discarded_at = stato === 'discarded' ? now : null;
+        }
+
+        const { data, error } = await ctx.admin
+          .from('semi_product_batches')
+          .update(patch)
+          .eq('id', id)
+          .eq('company_id', ctx.companyId)
+          .select(BATCH_COLUMNS)
+          .maybeSingle();
+        if (error) throw new HttpError(500, 'Errore aggiornamento lotto', 'db_error');
+        if (!data) throw new HttpError(404, 'Lotto non trovato', 'not_found');
+        await audit(ctx, 'semi.batch.update', 'semi_product_batches', id);
+        return json({ item: mapBatch(data as BatchRow) });
       }
 
       // ------------------------------------------------------------ EQUIPMENT

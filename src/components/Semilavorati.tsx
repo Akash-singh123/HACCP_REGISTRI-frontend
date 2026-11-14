@@ -13,13 +13,16 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSepara
 import { Separator } from '@/components/ui/separator';
 import { useConfirm } from '@/components/ConfirmDialog';
 import { toast } from 'sonner';
-import { activeDocs, activePrinting, type LabelPayload, type PrintJob } from '@/lib/api';
+import { activeDocs, activePrinting, readExpiryRules, type LabelPayload, type PrintJob, type SemiProductBatch, type StockStatus } from '@/lib/api';
 import { newIdempotencyKey, printLabel, printQueue, printerRegistry, usePrintersStore } from '@/printing';
 import { ReprintDialog } from '@/components/printing/ReprintDialog';
 import { useAuth } from '@/hooks/useAuth';
 import { DOC_FOLDERS, readTextFile, writeTextFile, blobToBase64, saveBlob } from '@/lib/docs';
 import {
   AlertCircle,
+  Archive,
+  ArchiveRestore,
+  CalendarClock,
   CheckCircle2,
   ChefHat,
   Cloud,
@@ -30,6 +33,7 @@ import {
   Lock,
   MoreVertical,
   Package,
+  PackageX,
   Pencil,
   Plus,
   Printer,
@@ -50,6 +54,60 @@ import { cn } from '@/lib/utils';
 const REGISTRY_CSV = 'Registro_Semilavorati.csv';
 const REGISTRY_PDF = 'Registro_Semilavorati_aggiornato.pdf';
 const SYSTEM_CATEGORY = 'Non assegnato';
+
+/** Filtri del ciclo di vita dei lotti di produzione. */
+type BatchFilter = 'attivi' | 'inScadenza' | 'scaduti' | 'archiviati' | 'scartati';
+
+const BATCH_FILTER_LABELS: Record<BatchFilter, string> = {
+  attivi: 'Attivi',
+  inScadenza: 'In scadenza',
+  scaduti: 'Scaduti',
+  archiviati: 'Archiviati',
+  scartati: 'Scartati',
+};
+
+const STOCK_STATUS_BADGE: Record<StockStatus, { label: string; className: string }> = {
+  active: { label: 'Attivo', className: 'border-info/30 bg-info/10 text-info' },
+  archived: { label: 'Archiviato', className: 'border-border bg-muted text-muted-foreground' },
+  discarded: { label: 'Scartato', className: 'border-destructive/30 bg-destructive/10 text-destructive' },
+};
+
+/** Giorni mancanti alla scadenza (null se non impostata o non valida). */
+function daysToExpiry(value?: string): number | null {
+  if (!value) return null;
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return null;
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  d.setHours(0, 0, 0, 0);
+  return Math.round((d.getTime() - today.getTime()) / 86_400_000);
+}
+
+/** Converte il campo quantità (accetta la virgola decimale) in numero. */
+function parseQuantity(value?: string): number | null {
+  const t = (value ?? '').trim().replace(',', '.');
+  if (!t) return null;
+  const n = Number(t);
+  return Number.isFinite(n) ? n : null;
+}
+
+/** True se il lotto rientra nel filtro di stato selezionato. */
+function matchesBatchFilter(batch: SemiProductBatch, filter: BatchFilter, warnDays: number): boolean {
+  const stato = batch.stato ?? 'active';
+  const days = daysToExpiry(batch.dataScadenza);
+  switch (filter) {
+    case 'attivi':
+      return stato === 'active';
+    case 'inScadenza':
+      return stato === 'active' && days !== null && days >= 0 && days <= warnDays;
+    case 'scaduti':
+      return stato === 'active' && days !== null && days < 0;
+    case 'archiviati':
+      return stato === 'archived';
+    case 'scartati':
+      return stato === 'discarded';
+  }
+}
 
 /** Etichette di stato dei lavori di stampa (in italiano). */
 const JOB_STATUS_LABELS: Record<PrintJob['status'], string> = {
@@ -89,6 +147,10 @@ export default function Semilavorati() {
     addCategory,
     renameCategory,
     removeCategory,
+    batches,
+    loadBatches,
+    addBatch,
+    updateBatch,
   } = useSemiProductsStore();
   const { items: incomingItems, load: loadIncomingFoods } = useIncomingFoodsStore();
   const { confirm, confirmDialog } = useConfirm();
@@ -113,7 +175,17 @@ export default function Semilavorati() {
   const [newCategoryName, setNewCategoryName] = useState('');
   const [renameState, setRenameState] = useState<{ open: boolean; cat?: string; name: string }>({ open: false, name: '' });
 
+  // --- Lotti di produzione: filtro di stato e registrazione del consumo ---
+  const [batchFilter, setBatchFilter] = useState<BatchFilter>('attivi');
+  const [consumeState, setConsumeState] = useState<{ open: boolean; batch?: SemiProductBatch; value: string; note: string }>({
+    open: false,
+    value: '',
+    note: '',
+  });
+
   useEffect(() => { load(); }, [load]);
+  // Carica i lotti di produzione registrati (tracciabilità, scadenze, archivio).
+  useEffect(() => { loadBatches(); }, [loadBatches]);
   // Carica l'archivio degli alimenti in ingresso (per i lotti)
   useEffect(() => { loadIncomingFoods(); }, [loadIncomingFoods]);
   // Carica le stampanti configurate (per "Salva e stampa etichetta").
@@ -133,6 +205,28 @@ export default function Semilavorati() {
     }
     return map;
   }, [templates]);
+
+  // Soglie di scadenza configurabili per azienda (default 1g avviso / 7g archivio).
+  const semiRules = useMemo(() => readExpiryRules(company?.settings).semi, [company?.settings]);
+
+  const batchCounts = useMemo(() => {
+    const result: Record<BatchFilter, number> = { attivi: 0, inScadenza: 0, scaduti: 0, archiviati: 0, scartati: 0 };
+    for (const b of batches) {
+      const stato = b.stato ?? 'active';
+      if (stato === 'archived') { result.archiviati += 1; continue; }
+      if (stato === 'discarded') { result.scartati += 1; continue; }
+      result.attivi += 1;
+      const days = daysToExpiry(b.dataScadenza);
+      if (days !== null && days < 0) result.scaduti += 1;
+      else if (days !== null && days <= semiRules.warnDays) result.inScadenza += 1;
+    }
+    return result;
+  }, [batches, semiRules.warnDays]);
+
+  const visibleBatches = useMemo(
+    () => batches.filter((b) => matchesBatchFilter(b, batchFilter, semiRules.warnDays)),
+    [batches, batchFilter, semiRules.warnDays],
+  );
 
   const form = useForm<z.infer<typeof schema>>({
     resolver: zodResolver(schema),
@@ -507,6 +601,30 @@ export default function Semilavorati() {
 
       await writeTextFile(DOC_FOLDERS.semilavorati, REGISTRY_CSV, updatedCsv, 'text/csv');
 
+      // Doppia scrittura: oltre al CSV HACCP (documento ufficiale), il lotto
+      // viene tracciato a database per abilitare avvisi di scadenza e
+      // archiviazione automatica lato server.
+      const quantitaIniziale = parseQuantity(values.quantita);
+      try {
+        await addBatch({
+          prodotto: values.prodotto,
+          lotto: uniqueLotto,
+          dataProduzione: values.data_produzione,
+          dataScadenza: values.data_scadenza,
+          quantitaIniziale,
+          quantitaResidua: quantitaIniziale,
+          unita: values.unita?.trim() || undefined,
+          ingredienti: values.ingredienti.map((i) => ({ nome: i.nome, lotto: i.lotto })),
+        });
+      } catch (dbError) {
+        // Il registro CSV è già salvato: un errore di tracciamento non annulla
+        // la registrazione, ma va segnalato perché disattiva gli avvisi.
+        console.error(dbError);
+        toast.warning('Lotto salvato nel registro, ma non tracciato per le scadenze', {
+          description: 'Riprova più tardi per attivare avvisi e archiviazione automatica.',
+        });
+      }
+
       toast.success('Registrazione salvata con successo nel registro semilavorati');
       reset({ prodotto: '', lotto_prodotto: '', data_produzione: '', data_scadenza: '', quantita: '', unita: '', ingredienti: [] });
       setSelectedProduct('');
@@ -642,6 +760,85 @@ export default function Semilavorati() {
     toast.success('Semilavorato aggiornato');
     setShowEditDialog({ open: false });
   });
+
+  /** Formatta la quantità tracciata (iniziale → residua) con l'unità. */
+  const formatBatchQuantity = (b: SemiProductBatch) => {
+    if (b.quantitaIniziale == null && b.quantitaResidua == null) return null;
+    const unit = b.unita ? ` ${b.unita}` : '';
+    const residua = b.quantitaResidua ?? b.quantitaIniziale;
+    if (b.quantitaIniziale != null && residua != null && residua !== b.quantitaIniziale) {
+      return `${residua}${unit} / ${b.quantitaIniziale}${unit}`;
+    }
+    return `${residua ?? b.quantitaIniziale}${unit}`;
+  };
+
+  /**
+   * Cambia lo stato del lotto SENZA cancellarlo (tracciabilità HACCP):
+   * archiviazione, scarto e ripristino.
+   */
+  const onBatchStatus = (b: SemiProductBatch, stato: StockStatus) => {
+    const meta: Record<StockStatus, { title: string; description: string; confirmLabel: string; success: string }> = {
+      active: {
+        title: 'Ripristinare questo lotto?',
+        description: `${b.prodotto} · lotto ${b.lotto} tornerà tra i lotti attivi.`,
+        confirmLabel: 'Ripristina',
+        success: 'Lotto ripristinato',
+      },
+      archived: {
+        title: 'Archiviare questo lotto?',
+        description: `${b.prodotto} · lotto ${b.lotto} verrà spostato in archivio. Nessuna cancellazione: resterà consultabile.`,
+        confirmLabel: 'Archivia',
+        success: 'Lotto archiviato',
+      },
+      discarded: {
+        title: 'Scartare questo lotto?',
+        description: `${b.prodotto} · lotto ${b.lotto} verrà marcato come scartato. Nessuna cancellazione: resterà per la tracciabilità.`,
+        confirmLabel: 'Scarta',
+        success: 'Lotto scartato',
+      },
+    };
+    const m = meta[stato];
+    confirm({
+      title: m.title,
+      description: m.description,
+      confirmLabel: m.confirmLabel,
+      destructive: stato === 'discarded',
+      onConfirm: async () => {
+        try {
+          await updateBatch({ id: b.id, stato });
+          toast.success(m.success);
+        } catch (e) {
+          console.error(e);
+          toast.error("Errore durante l'aggiornamento dello stato");
+        }
+      },
+    });
+  };
+
+  /** Apre il dialog per registrare il consumo (nuova quantità residua). */
+  const openConsume = (b: SemiProductBatch) => {
+    setConsumeState({
+      open: true,
+      batch: b,
+      value: b.quantitaResidua != null ? String(b.quantitaResidua) : '',
+      note: '',
+    });
+  };
+
+  const submitConsumption = async () => {
+    const { batch, value, note } = consumeState;
+    if (!batch) return;
+    const residua = parseQuantity(value);
+    if (residua === null || residua < 0) return toast.error('Inserisci una quantità residua valida');
+    try {
+      await updateBatch({ id: batch.id, quantitaResidua: residua, note: note.trim() || undefined });
+      toast.success('Consumo registrato');
+      setConsumeState({ open: false, value: '', note: '' });
+    } catch (e) {
+      console.error(e);
+      toast.error('Errore nel salvataggio del consumo');
+    }
+  };
 
   return (
     <div className="space-y-6">
@@ -1125,7 +1322,151 @@ export default function Semilavorati() {
 
           <Separator />
 
-          {/* ── 4. ETICHETTE RECENTI ─────────────────────────── */}
+          {/* ── 4. LOTTI DI PRODUZIONE ──────────────────────── */}
+          <section className="space-y-3">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="flex flex-wrap items-center gap-2">
+                <CalendarClock className="h-4 w-4 text-muted-foreground" />
+                <h3 className="section-title">Lotti di produzione</h3>
+                <Badge variant="secondary">{batches.length}</Badge>
+                {batchCounts.inScadenza > 0 && (
+                  <span className="inline-flex items-center gap-1 text-xs font-medium text-warning">
+                    <CalendarClock className="h-3.5 w-3.5" />
+                    {batchCounts.inScadenza} in scadenza
+                  </span>
+                )}
+                {batchCounts.scaduti > 0 && (
+                  <span className="inline-flex items-center gap-1 text-xs font-medium text-destructive">
+                    <AlertCircle className="h-3.5 w-3.5" />
+                    {batchCounts.scaduti} scadut{batchCounts.scaduti === 1 ? 'o' : 'i'}
+                  </span>
+                )}
+              </div>
+              <Button variant="ghost" size="sm" onClick={() => void loadBatches()}>
+                <RotateCcw className="h-4 w-4" />
+                Aggiorna
+              </Button>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2">
+              {(Object.keys(BATCH_FILTER_LABELS) as BatchFilter[]).map((key) => {
+                const active = batchFilter === key;
+                return (
+                  <button
+                    key={key}
+                    type="button"
+                    onClick={() => setBatchFilter(key)}
+                    className={cn(
+                      'inline-flex items-center gap-2 rounded-full border px-3.5 py-1.5 text-sm font-medium transition-all',
+                      active
+                        ? 'border-transparent bg-primary text-primary-foreground shadow-sm'
+                        : 'border-border bg-card text-foreground hover:border-primary/40 hover:bg-accent'
+                    )}
+                  >
+                    {BATCH_FILTER_LABELS[key]}
+                    <span
+                      className={cn(
+                        'rounded-full px-1.5 py-0.5 text-[11px] font-semibold leading-none',
+                        active ? 'bg-white/20' : 'bg-muted text-muted-foreground'
+                      )}
+                    >
+                      {batchCounts[key]}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+
+            {visibleBatches.length === 0 ? (
+              <p className="rounded-xl border border-dashed border-border bg-muted/30 px-4 py-6 text-center text-sm text-muted-foreground">
+                Nessun lotto in questa vista. I lotti compaiono qui quando registri una produzione.
+              </p>
+            ) : (
+              <div className="overflow-hidden rounded-xl border border-border/70">
+                <div className="divide-y divide-border/70">
+                  {visibleBatches.map((b) => {
+                    const stato = b.stato ?? 'active';
+                    const days = daysToExpiry(b.dataScadenza);
+                    const soon = days !== null && days >= 0 && days <= semiRules.warnDays;
+                    const expired = days !== null && days < 0;
+                    const qty = formatBatchQuantity(b);
+                    return (
+                      <div key={b.id} className="flex flex-wrap items-center gap-3 px-3 py-2.5">
+                        <div className="min-w-0 flex-1">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <p className="truncate text-sm font-medium">{b.prodotto}</p>
+                            <span className="rounded-md bg-muted px-2 py-0.5 font-mono text-xs">{b.lotto}</span>
+                            {stato !== 'active' && (
+                              <Badge variant="outline" className={STOCK_STATUS_BADGE[stato].className}>
+                                {STOCK_STATUS_BADGE[stato].label}
+                              </Badge>
+                            )}
+                          </div>
+                          <p className="mt-0.5 truncate text-xs text-muted-foreground">
+                            {b.dataProduzione ? `Prodotto ${formatDate(b.dataProduzione)}` : 'Produzione n/d'}
+                            {qty ? ` · Q.tà ${qty}` : ''}
+                          </p>
+                        </div>
+
+                        {b.dataScadenza && (
+                          <span
+                            className={cn(
+                              'shrink-0 text-xs',
+                              expired && stato === 'active' && 'font-medium text-destructive',
+                              soon && !expired && stato === 'active' && 'font-medium text-warning'
+                            )}
+                          >
+                            Scad. {formatDate(b.dataScadenza)}
+                            {expired && stato === 'active' && ' · scaduto'}
+                            {soon && !expired && stato === 'active' && ` · ${days}g`}
+                          </span>
+                        )}
+
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button variant="ghost" size="icon" title="Azioni" aria-label={`Azioni per ${b.prodotto}`}>
+                              <MoreVertical className="h-4 w-4" />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end" className="w-52">
+                            <DropdownMenuItem onSelect={() => openConsume(b)}>
+                              <Package className="h-4 w-4" />
+                              Registra consumo
+                            </DropdownMenuItem>
+                            <DropdownMenuSeparator />
+                            {stato === 'active' ? (
+                              <DropdownMenuItem onSelect={() => onBatchStatus(b, 'archived')}>
+                                <Archive className="h-4 w-4" />
+                                Archivia
+                              </DropdownMenuItem>
+                            ) : (
+                              <DropdownMenuItem onSelect={() => onBatchStatus(b, 'active')}>
+                                <ArchiveRestore className="h-4 w-4" />
+                                Ripristina
+                              </DropdownMenuItem>
+                            )}
+                            {stato !== 'discarded' && (
+                              <DropdownMenuItem
+                                className="text-destructive focus:text-destructive"
+                                onSelect={() => onBatchStatus(b, 'discarded')}
+                              >
+                                <PackageX className="h-4 w-4" />
+                                Scarta
+                              </DropdownMenuItem>
+                            )}
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+          </section>
+
+          <Separator />
+
+          {/* ── 5. ETICHETTE RECENTI ─────────────────────────── */}
           <section className="space-y-3">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div className="flex items-center gap-2">
@@ -1375,6 +1716,47 @@ export default function Semilavorati() {
               Annulla
             </Button>
             <Button onClick={handleEditSubmit}>Salva modifiche</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── Dialog: registra consumo del lotto ──────────────── */}
+      <Dialog open={consumeState.open} onOpenChange={(open) => setConsumeState((s) => ({ ...s, open }))}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Registra consumo</DialogTitle>
+            <DialogDescription>
+              {consumeState.batch
+                ? `${consumeState.batch.prodotto} · lotto ${consumeState.batch.lotto}. Indica la quantità residua dopo l'uso.`
+                : 'Indica la quantità residua dopo l\'uso.'}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-1.5">
+              <Label className="field-label">
+                Quantità residua{consumeState.batch?.unita ? ` (${consumeState.batch.unita})` : ''}
+              </Label>
+              <Input
+                value={consumeState.value}
+                onChange={(e) => setConsumeState((s) => ({ ...s, value: e.target.value }))}
+                placeholder="es. 1,5"
+                autoFocus
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label className="field-label">Note (opzionale)</Label>
+              <Input
+                value={consumeState.note}
+                onChange={(e) => setConsumeState((s) => ({ ...s, note: e.target.value }))}
+                placeholder="es. Usato per il servizio di pranzo"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setConsumeState({ open: false, value: '', note: '' })}>
+              Annulla
+            </Button>
+            <Button onClick={() => void submitConsumption()}>Salva consumo</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

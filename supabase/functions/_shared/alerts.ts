@@ -3,20 +3,25 @@
 //
 // Calcola, LATO SERVER, gli avvisi proattivi a partire dai dati reali del tenant:
 //   1. temperature fuori range
-//   2. lotti in scadenza
-//   3. piano controlli infestanti (attività programmate)
-//   4. certificazioni / contratti delle ditte esterne
-//   5. piano controlli periodici (verifiche postazioni, ri-controlli, azioni correttive)
+//   2. semilavorati in scadenza (PRIORITARI: lotti di produzione del ristorante)
+//   3. lotti degli alimenti in ingresso in scadenza
+//   4. piano controlli infestanti (attività programmate)
+//   5. certificazioni / contratti delle ditte esterne
+//   6. piano controlli periodici (verifiche postazioni, ri-controlli, azioni correttive)
 //
 // È una funzione PURA: riceve le righe già lette dal database e restituisce
 // l'elenco degli avvisi. Non accede al DB e non invia nulla: così la stessa
 // logica proprietaria è riusata sia dal centro notifiche in-app sia dal
 // dispatcher push schedulato (nessuna duplicazione di regole).
+//
+// Le soglie NON sono codificate rigidamente: arrivano da `rules` (configurate
+// per azienda in companies.settings->'expiry_rules'), con default applicati qui.
 
 export type AlertSeverity = 'critical' | 'warning';
 
 export type AlertCategory =
   | 'temperature'
+  | 'semilavorati'
   | 'lotti'
   | 'pest_piano'
   | 'pest_certificazioni'
@@ -37,8 +42,29 @@ export interface AlertItem {
   entityId: string | null;
 }
 
-// ── Soglie (coerenti con quelle già usate nei moduli) ──────────────────────
-export const LOTS_WARN_DAYS = 7; // alimenti in ingresso
+// ── Soglie configurabili per azienda ───────────────────────────────────────
+// warnDays    = quanti giorni prima della scadenza avvisare.
+// archiveDays = quanti giorni dopo la scadenza archiviare automaticamente
+//               (usato dal job di archiviazione, non da computeAlerts).
+export interface ExpiryRule {
+  warnDays: number;
+  archiveDays: number;
+}
+
+export interface AlertRules {
+  /** Alimenti in ingresso (materie prime). */
+  incoming: ExpiryRule;
+  /** Lotti di semilavorati prodotti internamente. */
+  semi: ExpiryRule;
+}
+
+export const DEFAULT_ALERT_RULES: AlertRules = {
+  incoming: { warnDays: 30, archiveDays: 30 },
+  semi: { warnDays: 1, archiveDays: 7 },
+};
+
+/** @deprecated soglia di default per gli alimenti in ingresso; ora in AlertRules. */
+export const LOTS_WARN_DAYS = DEFAULT_ALERT_RULES.incoming.warnDays;
 export const PEST_DUE_WARN_DAYS = 15; // verifiche / attività infestanti
 export const DOC_WARN_DAYS = 30; // documenti e certificazioni
 /** Orizzonte entro cui considerare un'ultima temperatura rilevata "attuale". */
@@ -68,6 +94,22 @@ export interface IncomingRow {
   lot: string | null;
   supplier: string | null;
   expiry_date: string | null;
+  /** Quantità residua (se tracciata) e unità di misura. */
+  quantity_remaining?: number | null;
+  unit?: string | null;
+  /** Ciclo di vita: 'active' | 'archived' | 'discarded'. */
+  status?: string | null;
+}
+
+/** Lotto di semilavorato prodotto internamente. */
+export interface SemiBatchRow {
+  id: string;
+  product_name: string;
+  lot: string | null;
+  expiry_date: string | null;
+  quantity_remaining: number | null;
+  unit: string | null;
+  status: string;
 }
 
 export interface ScheduleRow {
@@ -122,6 +164,10 @@ export interface AlertInputs {
   /** Registri recenti (dal più nuovo); bastano quelli entro il lookback. */
   records: RecordRow[];
   incomingFoods: IncomingRow[];
+  /** Lotti di semilavorati attivi dell'azienda (avvisi prioritari). */
+  semiBatches?: SemiBatchRow[];
+  /** Soglie di scadenza configurate per l'azienda (default se assenti). */
+  rules?: AlertRules;
   pestSchedules: ScheduleRow[];
   pestDocuments: DocumentRow[];
   pestStations: StationRow[];
@@ -160,10 +206,23 @@ function dueLabel(days: number | null): string {
 
 const SEVERITY_RANK: Record<AlertSeverity, number> = { critical: 0, warning: 1 };
 
+/** Priorità tra categorie a parità di gravità: i semilavorati vengono prima. */
+const CATEGORY_RANK: Record<AlertCategory, number> = {
+  semilavorati: 0,
+  lotti: 1,
+  temperature: 2,
+  pest_piano: 3,
+  pest_certificazioni: 4,
+  pest_controlli: 5,
+};
+
 // ── Calcolo ────────────────────────────────────────────────────────────────
 
 export function computeAlerts(input: AlertInputs): AlertItem[] {
   const { today } = input;
+  const rules = input.rules ?? DEFAULT_ALERT_RULES;
+  const lotsWarnDays = rules.incoming?.warnDays ?? DEFAULT_ALERT_RULES.incoming.warnDays;
+  const semiWarnDays = rules.semi?.warnDays ?? DEFAULT_ALERT_RULES.semi.warnDays;
   const alerts: AlertItem[] = [];
 
   // 1) Temperature fuori range --------------------------------------------
@@ -200,10 +259,36 @@ export function computeAlerts(input: AlertInputs): AlertItem[] {
     }
   }
 
-  // 2) Lotti in scadenza ---------------------------------------------------
+  // 2) Semilavorati in scadenza (PRIORITARI) ------------------------------
+  // Ogni lotto di produzione è avvisato singolarmente sulla propria scadenza
+  // effettiva: non un avviso generico per prodotto.
+  for (const batch of input.semiBatches ?? []) {
+    if (batch.status && batch.status !== 'active') continue;
+    const days = daysUntil(batch.expiry_date, today);
+    if (days === null || days > semiWarnDays) continue;
+    const expired = days < 0;
+    const lot = batch.lot ? ` — lotto ${batch.lot}` : '';
+    const qty =
+      batch.quantity_remaining != null
+        ? ` Quantità residua: ${batch.quantity_remaining}${batch.unit ? ` ${batch.unit}` : ''}.`
+        : '';
+    alerts.push({
+      key: `semilavorati:${batch.id}`,
+      category: 'semilavorati',
+      severity: expired ? 'critical' : 'warning',
+      title: `${batch.product_name}: ${expired ? 'lotto scaduto' : 'lotto in scadenza'}`,
+      message: `${expired ? 'Scaduto' : 'In scadenza'} il ${fmtDate(batch.expiry_date as string)} (${dueLabel(days)})${lot}.${qty}`,
+      dueDate: batch.expiry_date,
+      daysLeft: days,
+      entityId: batch.id,
+    });
+  }
+
+  // 3) Lotti degli alimenti in ingresso in scadenza -----------------------
   for (const food of input.incomingFoods) {
+    if (food.status && food.status !== 'active') continue;
     const days = daysUntil(food.expiry_date, today);
-    if (days === null || days > LOTS_WARN_DAYS) continue;
+    if (days === null || days > lotsWarnDays) continue;
     const expired = days < 0;
     const lot = food.lot ? ` — lotto ${food.lot}` : '';
     alerts.push({
@@ -218,7 +303,7 @@ export function computeAlerts(input: AlertInputs): AlertItem[] {
     });
   }
 
-  // 3) Piano controlli infestanti (attività programmate) --------------------
+  // 4) Piano controlli infestanti (attività programmate) --------------------
   for (const s of input.pestSchedules) {
     const late = s.status === 'in_ritardo';
     const days = daysUntil(s.due_date, today);
@@ -237,7 +322,7 @@ export function computeAlerts(input: AlertInputs): AlertItem[] {
     });
   }
 
-  // 4) Certificazioni / contratti delle ditte esterne ----------------------
+  // 5) Certificazioni / contratti delle ditte esterne ----------------------
   for (const doc of input.pestDocuments) {
     if (!doc.expiry_date) continue;
     const isExternal = doc.entity_type === 'external_company';
@@ -258,8 +343,8 @@ export function computeAlerts(input: AlertInputs): AlertItem[] {
     });
   }
 
-  // 5) Piano controlli periodici ------------------------------------------
-  // 5a) Postazioni da verificare / con verifica in scadenza.
+  // 6) Piano controlli periodici ------------------------------------------
+  // 6a) Postazioni da verificare / con verifica in scadenza.
   for (const st of input.pestStations) {
     if (st.status === 'rimossa' || st.status === 'sospesa') continue;
     // Verifica esplicita se impostata, altrimenti derivata dalla sostituzione UV.
@@ -300,7 +385,7 @@ export function computeAlerts(input: AlertInputs): AlertItem[] {
     }
   }
 
-  // 5b) Ri-controlli programmati a esito dei controlli.
+  // 6b) Ri-controlli programmati a esito dei controlli.
   for (const ins of input.pestInspections) {
     const days = daysUntil(ins.next_due, today);
     if (days === null || days > PEST_DUE_WARN_DAYS) continue;
@@ -317,7 +402,7 @@ export function computeAlerts(input: AlertInputs): AlertItem[] {
     });
   }
 
-  // 5c) Ri-controlli a esito degli interventi (ditte esterne).
+  // 6c) Ri-controlli a esito degli interventi (ditte esterne).
   for (const iv of input.pestInterventions) {
     const days = daysUntil(iv.next_check_date, today);
     if (days === null || days > PEST_DUE_WARN_DAYS) continue;
@@ -335,7 +420,7 @@ export function computeAlerts(input: AlertInputs): AlertItem[] {
     });
   }
 
-  // 5d) Azioni correttive non concluse.
+  // 6d) Azioni correttive non concluse.
   for (const ac of input.pestActions) {
     if (ac.status === 'completata' || ac.status === 'verificata') continue;
     const days = daysUntil(ac.due_date, today);
@@ -353,10 +438,13 @@ export function computeAlerts(input: AlertInputs): AlertItem[] {
     });
   }
 
-  // Ordinamento: prima i critici, poi per urgenza (scadenze imminenti), poi titolo.
+  // Ordinamento: prima i critici, poi per categoria (semilavorati in testa),
+  // poi per urgenza (scadenze imminenti), infine per titolo.
   alerts.sort((a, b) => {
     const s = SEVERITY_RANK[a.severity] - SEVERITY_RANK[b.severity];
     if (s !== 0) return s;
+    const c = (CATEGORY_RANK[a.category] ?? 9) - (CATEGORY_RANK[b.category] ?? 9);
+    if (c !== 0) return c;
     const da = a.daysLeft ?? Number.POSITIVE_INFINITY;
     const db = b.daysLeft ?? Number.POSITIVE_INFINITY;
     if (da !== db) return da - db;
