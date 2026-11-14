@@ -45,6 +45,7 @@ const PestControl = lazy(() => import('@/components/pest/PestControl'));
 import { PushSettingsRow, PwaInstallBanner } from '@/components/Pwa';
 import { OfflineSyncBanner } from '@/components/OfflineSyncBanner';
 import { NotificationCenter } from '@/components/NotificationCenter';
+import { ExpiryRulesSettings } from '@/components/ExpiryRulesSettings';
 import { CategoryGrid } from '@/components/CategoryGrid';
 import { DashboardSidebar, type SidebarGroup } from '@/components/DashboardSidebar';
 import { AREA } from '@/lib/areaIdentity';
@@ -559,6 +560,15 @@ export default function HaccpDashboard() {
               <PushSettingsRow companyId={authCompany?.id ?? null} />
             </CardContent>
           </Card>
+        )}
+
+        {/* Regole di scadenza configurabili per l'azienda (preavviso + archiviazione) */}
+        {showSettings && (
+          <ExpiryRulesSettings
+            companyId={authCompany?.id ?? null}
+            settings={authCompany?.settings}
+            onSaved={refreshCompany}
+          />
         )}
 
         {/* Stato dei registri salvati offline (compare solo se c'è qualcosa da sincronizzare) */}

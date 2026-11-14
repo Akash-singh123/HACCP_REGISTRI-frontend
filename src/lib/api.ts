@@ -220,43 +220,24 @@ export interface SemiProductBatchPatch {
 }
 
 // ── Regole di scadenza configurabili per azienda ───────────────────────────
-// Rispecchiano `companies.settings.expiry_rules` usate dal backend, con gli
-// stessi default: nessuna soglia codificata rigidamente nell'interfaccia.
-
-export interface ExpiryRule {
-  /** Giorni prima della scadenza in cui avvisare. */
-  warnDays: number;
-  /** Giorni dopo la scadenza oltre i quali archiviare automaticamente. */
-  archiveDays: number;
-}
-
-export interface ExpiryRules {
-  incoming: ExpiryRule;
-  semi: ExpiryRule;
-}
-
-export const DEFAULT_EXPIRY_RULES: ExpiryRules = {
-  incoming: { warnDays: 30, archiveDays: 30 },
-  semi: { warnDays: 1, archiveDays: 7 },
-};
-
-/** Legge le regole di scadenza dalle impostazioni azienda (default se assenti). */
-export function readExpiryRules(settings?: Record<string, unknown> | null): ExpiryRules {
-  const raw = (settings?.expiry_rules ?? null) as
-    | Partial<Record<'incoming' | 'semi', Partial<ExpiryRule>>>
-    | null;
-  const pick = (kind: 'incoming' | 'semi'): ExpiryRule => {
-    const def = DEFAULT_EXPIRY_RULES[kind];
-    const value = raw?.[kind];
-    const warn = Number(value?.warnDays);
-    const archive = Number(value?.archiveDays);
-    return {
-      warnDays: Number.isFinite(warn) && warn >= 0 ? warn : def.warnDays,
-      archiveDays: Number.isFinite(archive) && archive >= 0 ? archive : def.archiveDays,
-    };
-  };
-  return { incoming: pick('incoming'), semi: pick('semi') };
-}
+// La logica vive nel modulo puro `@/lib/expiryRules` (nessuna dipendenza dal
+// client): qui la ri-esportiamo per mantenere validi i punti di import esistenti
+// e restare coerenti con la struttura letta dal backend (Edge/SQL).
+export {
+  DEFAULT_EXPIRY_RULES,
+  EXPIRY_RULE_LIMITS,
+  normalizeExpiryDays,
+  readExpiryRules,
+  validateExpiryRules,
+  withExpiryRules,
+} from './expiryRules';
+export type {
+  ExpiryRule,
+  ExpiryRules,
+  ExpiryRulesErrors,
+  ExpiryRuleFieldErrors,
+  ExpiryRulesValidation,
+} from './expiryRules';
 
 /** File archiviato nel bucket documenti dell'azienda. */
 export interface DocFile {
