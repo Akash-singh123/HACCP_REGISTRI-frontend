@@ -51,17 +51,49 @@ export interface ExpiryRule {
   archiveDays: number;
 }
 
+/** Override di soglia applicato a una specifica categoria di scorta. */
+export interface CategoryExpiryRule extends ExpiryRule {
+  category: string;
+}
+
 export interface AlertRules {
   /** Alimenti in ingresso (materie prime). */
   incoming: ExpiryRule;
   /** Lotti di semilavorati prodotti internamente. */
   semi: ExpiryRule;
+  /** Override per categoria degli alimenti in ingresso. */
+  incomingCategories?: CategoryExpiryRule[];
+  /** Override per categoria dei semilavorati. */
+  semiCategories?: CategoryExpiryRule[];
 }
 
 export const DEFAULT_ALERT_RULES: AlertRules = {
   incoming: { warnDays: 30, archiveDays: 30 },
   semi: { warnDays: 1, archiveDays: 7 },
+  incomingCategories: [],
+  semiCategories: [],
 };
+
+/**
+ * Regola effettiva per una categoria: l'override configurato se presente
+ * (confronto case-insensitive sull'etichetta), altrimenti la regola base.
+ * Stessa semantica di `resolveExpiryRule` nel modulo puro lato client.
+ */
+export function resolveAlertRule(
+  rules: AlertRules,
+  kind: 'incoming' | 'semi',
+  category?: string | null,
+): ExpiryRule {
+  const base = rules?.[kind] ?? DEFAULT_ALERT_RULES[kind];
+  const needle = typeof category === 'string' ? category.trim().toLowerCase() : '';
+  if (needle) {
+    const list = (kind === 'incoming' ? rules.incomingCategories : rules.semiCategories) ?? [];
+    const hit = list.find((r) => r.category.trim().toLowerCase() === needle);
+    if (hit) return { warnDays: hit.warnDays, archiveDays: hit.archiveDays };
+  }
+  return { warnDays: base.warnDays, archiveDays: base.archiveDays };
+}
+
 
 /** @deprecated soglia di default per gli alimenti in ingresso; ora in AlertRules. */
 export const LOTS_WARN_DAYS = DEFAULT_ALERT_RULES.incoming.warnDays;
@@ -97,6 +129,8 @@ export interface IncomingRow {
   /** Quantità residua (se tracciata) e unità di misura. */
   quantity_remaining?: number | null;
   unit?: string | null;
+  /** Categoria della materia prima (per le regole di scadenza per categoria). */
+  category?: string | null;
   /** Ciclo di vita: 'active' | 'archived' | 'discarded'. */
   status?: string | null;
 }
@@ -109,6 +143,8 @@ export interface SemiBatchRow {
   expiry_date: string | null;
   quantity_remaining: number | null;
   unit: string | null;
+  /** Categoria del prodotto (per le regole di scadenza per categoria). */
+  category?: string | null;
   status: string;
 }
 
@@ -221,8 +257,6 @@ const CATEGORY_RANK: Record<AlertCategory, number> = {
 export function computeAlerts(input: AlertInputs): AlertItem[] {
   const { today } = input;
   const rules = input.rules ?? DEFAULT_ALERT_RULES;
-  const lotsWarnDays = rules.incoming?.warnDays ?? DEFAULT_ALERT_RULES.incoming.warnDays;
-  const semiWarnDays = rules.semi?.warnDays ?? DEFAULT_ALERT_RULES.semi.warnDays;
   const alerts: AlertItem[] = [];
 
   // 1) Temperature fuori range --------------------------------------------
@@ -261,11 +295,12 @@ export function computeAlerts(input: AlertInputs): AlertItem[] {
 
   // 2) Semilavorati in scadenza (PRIORITARI) ------------------------------
   // Ogni lotto di produzione è avvisato singolarmente sulla propria scadenza
-  // effettiva: non un avviso generico per prodotto.
+  // effettiva, secondo la regola della SUA categoria (o la regola base).
   for (const batch of input.semiBatches ?? []) {
     if (batch.status && batch.status !== 'active') continue;
+    const warnDays = resolveAlertRule(rules, 'semi', batch.category).warnDays;
     const days = daysUntil(batch.expiry_date, today);
-    if (days === null || days > semiWarnDays) continue;
+    if (days === null || days > warnDays) continue;
     const expired = days < 0;
     const lot = batch.lot ? ` — lotto ${batch.lot}` : '';
     const qty =
@@ -287,8 +322,9 @@ export function computeAlerts(input: AlertInputs): AlertItem[] {
   // 3) Lotti degli alimenti in ingresso in scadenza -----------------------
   for (const food of input.incomingFoods) {
     if (food.status && food.status !== 'active') continue;
+    const warnDays = resolveAlertRule(rules, 'incoming', food.category).warnDays;
     const days = daysUntil(food.expiry_date, today);
-    if (days === null || days > lotsWarnDays) continue;
+    if (days === null || days > warnDays) continue;
     const expired = days < 0;
     const lot = food.lot ? ` — lotto ${food.lot}` : '';
     alerts.push({

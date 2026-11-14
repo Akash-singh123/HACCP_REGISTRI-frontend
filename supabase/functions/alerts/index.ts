@@ -25,6 +25,7 @@ import {
   type AlertInputs,
   type AlertItem,
   type AlertRules,
+  type CategoryExpiryRule,
 } from '../_shared/alerts.ts';
 import webpush from 'npm:web-push@3.6.7';
 
@@ -66,7 +67,8 @@ async function loadFeatures(admin: GuardContext['admin'], companyId: string): Pr
 /**
  * Legge le soglie di scadenza configurate per l'azienda da
  * companies.settings->'expiry_rules', applicando i default se assenti.
- * Le regole NON sono codificate: ogni ristorante può personalizzarle.
+ * Le regole NON sono codificate: ogni ristorante può personalizzarle, anche
+ * con override per singola categoria (incomingCategories / semiCategories).
  */
 async function loadRules(admin: GuardContext['admin'], companyId: string): Promise<AlertRules> {
   const { data } = await admin
@@ -78,6 +80,22 @@ async function loadRules(admin: GuardContext['admin'], companyId: string): Promi
   const r = settings.expiry_rules ?? {};
   const num = (v: unknown, fallback: number) =>
     typeof v === 'number' && Number.isFinite(v) && v >= 0 ? v : fallback;
+  const categories = (raw: unknown): CategoryExpiryRule[] => {
+    if (!Array.isArray(raw)) return [];
+    const out: CategoryExpiryRule[] = [];
+    const seen = new Set<string>();
+    for (const entry of raw as Array<Record<string, unknown>>) {
+      const category = typeof entry?.category === 'string' ? entry.category.trim() : '';
+      const warnDays = num(entry?.warnDays, NaN);
+      const archiveDays = num(entry?.archiveDays, NaN);
+      if (!category || !Number.isFinite(warnDays) || !Number.isFinite(archiveDays)) continue;
+      const key = category.toLowerCase();
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push({ category, warnDays, archiveDays });
+    }
+    return out;
+  };
   return {
     incoming: {
       warnDays: num(r.incoming?.warnDays, DEFAULT_ALERT_RULES.incoming.warnDays),
@@ -87,6 +105,8 @@ async function loadRules(admin: GuardContext['admin'], companyId: string): Promi
       warnDays: num(r.semi?.warnDays, DEFAULT_ALERT_RULES.semi.warnDays),
       archiveDays: num(r.semi?.archiveDays, DEFAULT_ALERT_RULES.semi.archiveDays),
     },
+    incomingCategories: categories(r.incomingCategories),
+    semiCategories: categories(r.semiCategories),
   };
 }
 
@@ -120,14 +140,14 @@ async function loadInputs(
         .order('record_date', { ascending: false }),
       admin
         .from('incoming_foods')
-        .select('id, name, lot, supplier, expiry_date, quantity_remaining, unit, status')
+        .select('id, name, lot, supplier, expiry_date, quantity_remaining, unit, category, status')
         .eq('company_id', companyId)
         .not('expiry_date', 'is', null)
         .neq('status', 'discarded'),
       // Lotti di semilavorati attivi: avvisi prioritari sulla scadenza del lotto.
       admin
         .from('semi_product_batches')
-        .select('id, product_name, lot, expiry_date, quantity_remaining, unit, status')
+        .select('id, product_name, lot, expiry_date, quantity_remaining, unit, category, status')
         .eq('company_id', companyId)
         .eq('status', 'active')
         .not('expiry_date', 'is', null),

@@ -33,7 +33,7 @@ import BarcodeScannerDialog from '@/components/BarcodeScannerDialog';
 import LabelScanDialog from '@/components/LabelScanDialog';
 import { useConfirm } from '@/components/ConfirmDialog';
 import { useAuth } from '@/hooks/useAuth';
-import { readExpiryRules, type StockStatus } from '@/lib/api';
+import { readExpiryRules, resolveExpiryRule, type StockStatus } from '@/lib/api';
 import { parseBarcode } from '@/lib/barcode';
 import { cn } from '@/lib/utils';
 
@@ -121,8 +121,12 @@ export default function IncomingFoods() {
   // Assicura che i semilavorati siano caricati per avere gli ingredienti aggiornati
   useEffect(() => { loadSemi(); }, [loadSemi]);
 
-  // Soglia di avviso configurabile per azienda (default 30 giorni per gli alimenti).
-  const warnDays = useMemo(() => readExpiryRules(company?.settings).incoming.warnDays, [company?.settings]);
+  // Regole di scadenza per azienda: le soglie possono variare per categoria.
+  const rules = useMemo(() => readExpiryRules(company?.settings), [company?.settings]);
+  const warnDaysFor = useMemo(
+    () => (item: IncomingFood) => resolveExpiryRule(rules, 'incoming', item.categoria).warnDays,
+    [rules],
+  );
 
   // Conteggio per filtro: un'unica passata sui dati.
   const counts = useMemo(() => {
@@ -134,14 +138,14 @@ export default function IncomingFoods() {
       result.attivi += 1;
       const days = daysToExpiry(item.dataScadenza);
       if (days !== null && days < 0) result.scaduti += 1;
-      else if (days !== null && days <= warnDays) result.inScadenza += 1;
+      else if (days !== null && days <= warnDaysFor(item)) result.inScadenza += 1;
     }
     return result;
-  }, [items, warnDays]);
+  }, [items, warnDaysFor]);
 
   const visibleItems = useMemo(
-    () => items.filter((item) => matchesFilter(item, statusFilter, warnDays)),
-    [items, statusFilter, warnDays],
+    () => items.filter((item) => matchesFilter(item, statusFilter, warnDaysFor(item))),
+    [items, statusFilter, warnDaysFor],
   );
 
   const grouped = useMemo(() => {
@@ -635,7 +639,7 @@ export default function IncomingFoods() {
                 ) : (
                   visibleItems.map(it => {
                     const days = daysToExpiry(it.dataScadenza);
-                    const soon = days !== null && days >= 0 && days <= warnDays;
+                    const soon = days !== null && days >= 0 && days <= warnDaysFor(it);
                     const expired = days !== null && days < 0;
                     const stato = it.stato ?? 'active';
                     return (
@@ -685,7 +689,7 @@ export default function IncomingFoods() {
             ) : (
               visibleItems.map(it => {
                 const days = daysToExpiry(it.dataScadenza);
-                const soon = days !== null && days >= 0 && days <= warnDays;
+                const soon = days !== null && days >= 0 && days <= warnDaysFor(it);
                 const expired = days !== null && days < 0;
                 const stato = it.stato ?? 'active';
                 return (

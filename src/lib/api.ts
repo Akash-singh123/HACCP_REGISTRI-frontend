@@ -190,6 +190,8 @@ export interface SemiProductBatch {
   quantitaIniziale: number | null;
   quantitaResidua: number | null;
   unita: string;
+  /** Categoria del prodotto (dal modello di produzione); '' se non assegnata. */
+  categoria: string;
   ingredienti: { nome: string; lotto: string }[];
   note: string;
   stato: StockStatus;
@@ -207,6 +209,8 @@ export interface SemiProductBatchPayload {
   quantitaIniziale?: number | null;
   quantitaResidua?: number | null;
   unita?: string;
+  /** Categoria del prodotto: abilita le regole di scadenza per categoria. */
+  categoria?: string;
   ingredienti?: { nome: string; lotto: string }[];
   note?: string;
 }
@@ -226,16 +230,25 @@ export interface SemiProductBatchPatch {
 export {
   DEFAULT_EXPIRY_RULES,
   EXPIRY_RULE_LIMITS,
+  MAX_CATEGORY_LENGTH,
+  findCategoryExpiryRule,
+  normalizeCategory,
   normalizeExpiryDays,
   readExpiryRules,
+  resolveExpiryRule,
   validateExpiryRules,
   withExpiryRules,
 } from './expiryRules';
 export type {
+  CategoryExpiryRule,
+  CategoryRuleFieldErrors,
+  CategoryRuleInput,
   ExpiryRule,
+  ExpiryRuleKind,
   ExpiryRules,
   ExpiryRulesErrors,
   ExpiryRuleFieldErrors,
+  ExpiryRulesFormInput,
   ExpiryRulesValidation,
 } from './expiryRules';
 

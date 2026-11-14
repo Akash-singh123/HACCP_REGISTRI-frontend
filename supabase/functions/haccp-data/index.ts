@@ -76,6 +76,7 @@ interface BatchRow {
   quantity_initial: number | null;
   quantity_remaining: number | null;
   unit: string | null;
+  category: string | null;
   ingredients: unknown;
   notes: string | null;
   status: string;
@@ -94,6 +95,7 @@ function mapBatch(r: BatchRow) {
     quantitaIniziale: r.quantity_initial ?? null,
     quantitaResidua: r.quantity_remaining ?? null,
     unita: r.unit ?? '',
+    categoria: r.category ?? '',
     ingredienti: Array.isArray(r.ingredients) ? r.ingredients : [],
     note: r.notes ?? '',
     stato: (r.status ?? 'active') as 'active' | 'archived' | 'discarded',
@@ -104,7 +106,7 @@ function mapBatch(r: BatchRow) {
 }
 
 const BATCH_COLUMNS =
-  'id, product_name, lot, produced_on, expiry_date, quantity_initial, quantity_remaining, unit, ingredients, notes, status, archived_at, discarded_at, created_at';
+  'id, product_name, lot, produced_on, expiry_date, quantity_initial, quantity_remaining, unit, category, ingredients, notes, status, archived_at, discarded_at, created_at';
 
 /**
  * Scrive in blocco un elenco di registri giornalieri per l'azienda indicata.
@@ -491,6 +493,7 @@ Deno.serve(async (req: Request) => {
           quantity_initial: quantitaIniziale,
           quantity_remaining: quantitaResidua ?? quantitaIniziale,
           unit: body.unita ? String(body.unita).slice(0, 20) : null,
+          category: body.categoria ? String(body.categoria).slice(0, 80) : null,
           ingredients: Array.isArray(body.ingredienti) ? body.ingredienti : [],
           notes: body.note ? String(body.note).slice(0, MAX_NOTES) : null,
           updated_at: new Date().toISOString(),

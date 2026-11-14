@@ -13,7 +13,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSepara
 import { Separator } from '@/components/ui/separator';
 import { useConfirm } from '@/components/ConfirmDialog';
 import { toast } from 'sonner';
-import { activeDocs, activePrinting, readExpiryRules, type LabelPayload, type PrintJob, type SemiProductBatch, type StockStatus } from '@/lib/api';
+import { activeDocs, activePrinting, readExpiryRules, resolveExpiryRule, type LabelPayload, type PrintJob, type SemiProductBatch, type StockStatus } from '@/lib/api';
 import { newIdempotencyKey, printLabel, printQueue, printerRegistry, usePrintersStore } from '@/printing';
 import { ReprintDialog } from '@/components/printing/ReprintDialog';
 import { useAuth } from '@/hooks/useAuth';
@@ -206,8 +206,12 @@ export default function Semilavorati() {
     return map;
   }, [templates]);
 
-  // Soglie di scadenza configurabili per azienda (default 1g avviso / 7g archivio).
-  const semiRules = useMemo(() => readExpiryRules(company?.settings).semi, [company?.settings]);
+  // Regole di scadenza per azienda: le soglie possono variare per categoria.
+  const rules = useMemo(() => readExpiryRules(company?.settings), [company?.settings]);
+  const warnDaysFor = useMemo(
+    () => (batch: SemiProductBatch) => resolveExpiryRule(rules, 'semi', batch.categoria).warnDays,
+    [rules],
+  );
 
   const batchCounts = useMemo(() => {
     const result: Record<BatchFilter, number> = { attivi: 0, inScadenza: 0, scaduti: 0, archiviati: 0, scartati: 0 };
@@ -218,14 +222,14 @@ export default function Semilavorati() {
       result.attivi += 1;
       const days = daysToExpiry(b.dataScadenza);
       if (days !== null && days < 0) result.scaduti += 1;
-      else if (days !== null && days <= semiRules.warnDays) result.inScadenza += 1;
+      else if (days !== null && days <= warnDaysFor(b)) result.inScadenza += 1;
     }
     return result;
-  }, [batches, semiRules.warnDays]);
+  }, [batches, warnDaysFor]);
 
   const visibleBatches = useMemo(
-    () => batches.filter((b) => matchesBatchFilter(b, batchFilter, semiRules.warnDays)),
-    [batches, batchFilter, semiRules.warnDays],
+    () => batches.filter((b) => matchesBatchFilter(b, batchFilter, warnDaysFor(b))),
+    [batches, batchFilter, warnDaysFor],
   );
 
   const form = useForm<z.infer<typeof schema>>({
@@ -614,6 +618,7 @@ export default function Semilavorati() {
           quantitaIniziale,
           quantitaResidua: quantitaIniziale,
           unita: values.unita?.trim() || undefined,
+          categoria: (selectedTemplate?.categoria || selectedCategory) || undefined,
           ingredienti: values.ingredienti.map((i) => ({ nome: i.nome, lotto: i.lotto })),
         });
       } catch (dbError) {
@@ -1387,7 +1392,7 @@ export default function Semilavorati() {
                   {visibleBatches.map((b) => {
                     const stato = b.stato ?? 'active';
                     const days = daysToExpiry(b.dataScadenza);
-                    const soon = days !== null && days >= 0 && days <= semiRules.warnDays;
+                    const soon = days !== null && days >= 0 && days <= warnDaysFor(b);
                     const expired = days !== null && days < 0;
                     const qty = formatBatchQuantity(b);
                     return (
