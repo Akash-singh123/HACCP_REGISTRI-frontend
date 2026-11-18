@@ -3,8 +3,11 @@
 // Elenca le attività programmate con scadenze e frequenze, evidenzia i ritardi
 // e genera automaticamente l'occorrenza successiva al completamento.
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { api, ApiError, type PestArea, type PestSchedule, type PestStation } from '@/lib/api';
+import { usePestList } from '@/hooks/useHaccpQueries';
+import { queryKeys } from '@/lib/queryKeys';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -53,12 +56,14 @@ function addDays(date: string, days: number): string {
   return d.toISOString().slice(0, 10);
 }
 
+// Array vuoti con identità stabile a livello di modulo.
+const EMPTY_SCHEDULES: PestSchedule[] = [];
+const EMPTY_AREAS: PestArea[] = [];
+const EMPTY_STATIONS: PestStation[] = [];
+
 export function PestSchedulesPanel({ companyId }: Props) {
   const { confirm, confirmDialog } = useConfirm();
-  const [schedules, setSchedules] = useState<PestSchedule[]>([]);
-  const [areas, setAreas] = useState<PestArea[]>([]);
-  const [stations, setStations] = useState<PestStation[]>([]);
-  const [loading, setLoading] = useState(true);
+  const queryClient = useQueryClient();
 
   const [formOpen, setFormOpen] = useState(false);
   const [editItem, setEditItem] = useState<PestSchedule | null>(null);
@@ -67,27 +72,38 @@ export function PestSchedulesPanel({ companyId }: Props) {
   const [filterKind, setFilterKind] = useState('all');
   const [onlyLate, setOnlyLate] = useState(false);
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    try {
-      const [scRes, arRes, stRes] = await Promise.all([
-        api.pest.list<PestSchedule>(companyId, 'schedules'),
-        api.pest.list<PestArea>(companyId, 'areas'),
-        api.pest.list<PestStation>(companyId, 'stations'),
-      ]);
-      setSchedules(scRes.items);
-      setAreas(arRes.items);
-      setStations(stRes.items);
-    } catch (err) {
-      toast.error(err instanceof ApiError ? err.message : 'Impossibile caricare le attività programmate');
-    } finally {
-      setLoading(false);
-    }
-  }, [companyId]);
+  // Letture del modulo via React Query: stessa cache condivisa con gli altri pannelli.
+  const schedulesQuery = usePestList<PestSchedule>(companyId, 'schedules');
+  const areasQuery = usePestList<PestArea>(companyId, 'areas');
+  const stationsQuery = usePestList<PestStation>(companyId, 'stations');
 
+  const schedules = schedulesQuery.data ?? EMPTY_SCHEDULES;
+  const areas = areasQuery.data ?? EMPTY_AREAS;
+  const stations = stationsQuery.data ?? EMPTY_STATIONS;
+
+  // Skeleton finché i dati iniziali non sono pronti (stessa semantica del load manuale).
+  const loading = schedulesQuery.isPending || areasQuery.isPending || stationsQuery.isPending;
+  const refreshing = schedulesQuery.isFetching || areasQuery.isFetching || stationsQuery.isFetching;
+
+  // Aggiornamento ottimistico della cache dopo una scrittura riuscita.
+  const setSchedules = (updater: (prev: PestSchedule[]) => PestSchedule[]) =>
+    queryClient.setQueryData<PestSchedule[]>(queryKeys.pest.list(companyId, 'schedules'), (prev) =>
+      updater(prev ?? []),
+    );
+
+  // Errore di lettura: mantiene il feedback che c'era con il caricamento manuale.
   useEffect(() => {
-    void load();
-  }, [load]);
+    if (!schedulesQuery.isError && !areasQuery.isError && !stationsQuery.isError) return;
+    const err = schedulesQuery.error ?? areasQuery.error ?? stationsQuery.error;
+    toast.error(err instanceof ApiError ? err.message : 'Impossibile caricare le attività programmate');
+  }, [
+    schedulesQuery.isError,
+    schedulesQuery.error,
+    areasQuery.isError,
+    areasQuery.error,
+    stationsQuery.isError,
+    stationsQuery.error,
+  ]);
 
   const areaName = (id: string | null) => areas.find((a) => a.id === id)?.name ?? null;
   const stationCode = (id: string | null) => stations.find((s) => s.id === id)?.code ?? null;
@@ -245,8 +261,16 @@ export function PestSchedulesPanel({ companyId }: Props) {
               </div>
             </div>
             <div className="flex flex-wrap gap-2">
-              <Button variant="ghost" size="icon" className="h-11 w-11 sm:h-10 sm:w-10" onClick={() => void load()} title="Aggiorna">
-                {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-11 w-11 sm:h-10 sm:w-10"
+                onClick={() =>
+                  void Promise.all([schedulesQuery.refetch(), areasQuery.refetch(), stationsQuery.refetch()])
+                }
+                title="Aggiorna"
+              >
+                {refreshing ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
               </Button>
               <Button onClick={openCreate}>
                 <CalendarPlus className="mr-2 h-4 w-4" /> Programma attività

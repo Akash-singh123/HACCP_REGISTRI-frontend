@@ -3,7 +3,10 @@
 // monitoraggio. Sono personalizzabili da ogni ristorante senza vincoli numerici.
 
 import { useEffect, useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { api, ApiError, type PestStationCategory, type PestStationType } from '@/lib/api';
+import { usePestList } from '@/hooks/useHaccpQueries';
+import { queryKeys } from '@/lib/queryKeys';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -35,30 +38,32 @@ const EMPTY = {
   position: 0,
 };
 
+const EMPTY_TYPES: PestStationType[] = [];
+
 export function PestStationTypesPanel({ companyId }: Props) {
   const { confirm, confirmDialog } = useConfirm();
-  const [types, setTypes] = useState<PestStationType[]>([]);
-  const [loading, setLoading] = useState(true);
+  const queryClient = useQueryClient();
   const [saving, setSaving] = useState(false);
   const [form, setForm] = useState({ ...EMPTY });
   const [editId, setEditId] = useState<string | null>(null);
 
-  const load = async () => {
-    setLoading(true);
-    try {
-      const { items } = await api.pest.list<PestStationType>(companyId, 'stationTypes');
-      setTypes(items);
-    } catch (err) {
-      toast.error(err instanceof ApiError ? err.message : 'Impossibile caricare i tipi di postazione');
-    } finally {
-      setLoading(false);
-    }
-  };
+  // Elenco tipi di postazione via React Query: stessa cache condivisa del modulo.
+  const typesQuery = usePestList<PestStationType>(companyId, 'stationTypes');
+  const types = typesQuery.data ?? EMPTY_TYPES;
+  const loading = typesQuery.isPending;
 
+  // Aggiornamento ottimistico della cache dopo una scrittura riuscita.
+  const setTypes = (updater: (prev: PestStationType[]) => PestStationType[]) =>
+    queryClient.setQueryData<PestStationType[]>(queryKeys.pest.list(companyId, 'stationTypes'), (prev) =>
+      updater(prev ?? []),
+    );
+
+  // Errore di lettura: mantiene il feedback che c'era con il caricamento manuale.
   useEffect(() => {
-    void load();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [companyId]);
+    if (!typesQuery.isError) return;
+    const err = typesQuery.error;
+    toast.error(err instanceof ApiError ? err.message : 'Impossibile caricare i tipi di postazione');
+  }, [typesQuery.isError, typesQuery.error]);
 
   const resetForm = () => {
     setForm({ ...EMPTY });

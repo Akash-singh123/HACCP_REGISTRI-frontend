@@ -27,7 +27,7 @@ import {
 } from '@/components/ui/select';
 import { useConfirm } from '@/components/ConfirmDialog';
 import { blobToBase64, saveBlob, base64ToBlob } from '@/lib/docs';
-import { categoryMeta, statusMeta, PEST_STATUSES, codePrefix, PEST_LAMP_TYPES, PEST_GLUE_PLATE_TYPES } from './pestMeta';
+import { categoryMeta, PEST_STATUSES, codePrefix, PEST_LAMP_TYPES, PEST_GLUE_PLATE_TYPES } from './pestMeta';
 import { toast } from 'sonner';
 import { ImageIcon, AlertCircle, Loader2, MapPin, Save, Sun, Trash2, Upload } from 'lucide-react';
 
@@ -173,8 +173,14 @@ export function PestStationFormDialog({
       const prefix = codePrefix(firstType?.category ?? 'altro');
       setForm({
         ...EMPTY,
-        area_id: areas[0]?.id ?? '',
-        ...defaults,
+        // Valori preimpostati dalla mappa (coordinate, planimetria, area):
+        // normalizzati perché i campi testuali del form non ammettono null.
+        pos_x: defaults?.pos_x ?? null,
+        pos_y: defaults?.pos_y ?? null,
+        floorplan_id: defaults?.floorplan_id ?? null,
+        area_id: defaults?.area_id ?? areas[0]?.id ?? '',
+        location: defaults?.location ?? '',
+        device_kind: defaults?.device_kind ?? '',
         station_type_id: firstType?.id ?? '',
         control_frequency_days: firstType?.default_frequency_days != null ? String(firstType.default_frequency_days) : '',
         code: nextCode(prefix, existingCodes),

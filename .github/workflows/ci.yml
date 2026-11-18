@@ -64,6 +64,9 @@ jobs:
   e2e:
     name: E2E (Playwright)
     runs-on: ubuntu-latest
+    # Gli E2E partono solo se il quality gate è verde: evita di sprecare minuti
+    # di CI su un browser reale quando lint/tipi/test sono già rotti.
+    needs: quality
 
     steps:
       - uses: actions/checkout@v4

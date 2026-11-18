@@ -121,7 +121,7 @@ export function FloorplanCanvas({
     setDragPos(toNorm(e.clientX, e.clientY));
   };
 
-  const onPointerUp = (e: React.PointerEvent) => {
+  const onPointerUp = () => {
     const stationId = dragId;
     const pos = dragPos;
     setDragId(null);

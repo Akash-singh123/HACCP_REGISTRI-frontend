@@ -4,7 +4,8 @@
 // con date di emissione/scadenza, categoria, collegamento a un elemento reale del
 // modulo e download del file archiviato.
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import {
   api,
   ApiError,
@@ -18,6 +19,8 @@ import {
   type PestProduct,
   type PestStation,
 } from '@/lib/api';
+import { usePestList } from '@/hooks/useHaccpQueries';
+import { queryKeys } from '@/lib/queryKeys';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -77,18 +80,20 @@ function downloadName(doc: PestDocument): string {
   return `${doc.name}${ext}`;
 }
 
+// Array vuoti con identità stabile a livello di modulo.
+const EMPTY_DOCUMENTS: PestDocument[] = [];
+const EMPTY_STATIONS: PestStation[] = [];
+const EMPTY_PRODUCTS: PestProduct[] = [];
+const EMPTY_INTERVENTIONS: PestIntervention[] = [];
+const EMPTY_EXTERNAL_COMPANIES: PestExternalCompany[] = [];
+const EMPTY_ANOMALIES: PestAnomaly[] = [];
+const EMPTY_AREAS: PestArea[] = [];
+const EMPTY_PLANS: PestPlan[] = [];
+const EMPTY_FLOORPLANS: PestFloorplan[] = [];
+
 export function PestDocumentsPanel({ companyId }: Props) {
   const { confirm, confirmDialog } = useConfirm();
-  const [documents, setDocuments] = useState<PestDocument[]>([]);
-  const [stations, setStations] = useState<PestStation[]>([]);
-  const [products, setProducts] = useState<PestProduct[]>([]);
-  const [interventions, setInterventions] = useState<PestIntervention[]>([]);
-  const [externalCompanies, setExternalCompanies] = useState<PestExternalCompany[]>([]);
-  const [anomalies, setAnomalies] = useState<PestAnomaly[]>([]);
-  const [areas, setAreas] = useState<PestArea[]>([]);
-  const [plans, setPlans] = useState<PestPlan[]>([]);
-  const [floorplans, setFloorplans] = useState<PestFloorplan[]>([]);
-  const [loading, setLoading] = useState(true);
+  const queryClient = useQueryClient();
 
   const [formOpen, setFormOpen] = useState(false);
   const [editItem, setEditItem] = useState<PestDocument | null>(null);
@@ -98,39 +103,101 @@ export function PestDocumentsPanel({ companyId }: Props) {
   const [search, setSearch] = useState('');
   const [onlyExpiring, setOnlyExpiring] = useState(false);
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    try {
-      const [docRes, stRes, prRes, ivRes, ecRes, anRes, arRes, plRes, fpRes] = await Promise.all([
-        api.pest.list<PestDocument>(companyId, 'documents'),
-        api.pest.list<PestStation>(companyId, 'stations'),
-        api.pest.list<PestProduct>(companyId, 'products'),
-        api.pest.list<PestIntervention>(companyId, 'interventions'),
-        api.pest.list<PestExternalCompany>(companyId, 'externalCompanies'),
-        api.pest.list<PestAnomaly>(companyId, 'anomalies'),
-        api.pest.list<PestArea>(companyId, 'areas'),
-        api.pest.list<PestPlan>(companyId, 'plans'),
-        api.pest.list<PestFloorplan>(companyId, 'floorplans'),
-      ]);
-      setDocuments(docRes.items);
-      setStations(stRes.items);
-      setProducts(prRes.items);
-      setInterventions(ivRes.items);
-      setExternalCompanies(ecRes.items);
-      setAnomalies(anRes.items);
-      setAreas(arRes.items);
-      setPlans(plRes.items);
-      setFloorplans(fpRes.items);
-    } catch (err) {
-      toast.error(err instanceof ApiError ? err.message : 'Impossibile caricare l’archivio documenti');
-    } finally {
-      setLoading(false);
-    }
-  }, [companyId]);
+  // Letture del modulo via React Query: stessa cache condivisa con gli altri pannelli.
+  const documentsQuery = usePestList<PestDocument>(companyId, 'documents');
+  const stationsQuery = usePestList<PestStation>(companyId, 'stations');
+  const productsQuery = usePestList<PestProduct>(companyId, 'products');
+  const interventionsQuery = usePestList<PestIntervention>(companyId, 'interventions');
+  const externalCompaniesQuery = usePestList<PestExternalCompany>(companyId, 'externalCompanies');
+  const anomaliesQuery = usePestList<PestAnomaly>(companyId, 'anomalies');
+  const areasQuery = usePestList<PestArea>(companyId, 'areas');
+  const plansQuery = usePestList<PestPlan>(companyId, 'plans');
+  const floorplansQuery = usePestList<PestFloorplan>(companyId, 'floorplans');
 
+  const documents = documentsQuery.data ?? EMPTY_DOCUMENTS;
+  const stations = stationsQuery.data ?? EMPTY_STATIONS;
+  const products = productsQuery.data ?? EMPTY_PRODUCTS;
+  const interventions = interventionsQuery.data ?? EMPTY_INTERVENTIONS;
+  const externalCompanies = externalCompaniesQuery.data ?? EMPTY_EXTERNAL_COMPANIES;
+  const anomalies = anomaliesQuery.data ?? EMPTY_ANOMALIES;
+  const areas = areasQuery.data ?? EMPTY_AREAS;
+  const plans = plansQuery.data ?? EMPTY_PLANS;
+  const floorplans = floorplansQuery.data ?? EMPTY_FLOORPLANS;
+
+  // Skeleton finché i dati iniziali non sono pronti (stessa semantica del load manuale).
+  const loading =
+    documentsQuery.isPending ||
+    stationsQuery.isPending ||
+    productsQuery.isPending ||
+    interventionsQuery.isPending ||
+    externalCompaniesQuery.isPending ||
+    anomaliesQuery.isPending ||
+    areasQuery.isPending ||
+    plansQuery.isPending ||
+    floorplansQuery.isPending;
+  const refreshing =
+    documentsQuery.isFetching ||
+    stationsQuery.isFetching ||
+    productsQuery.isFetching ||
+    interventionsQuery.isFetching ||
+    externalCompaniesQuery.isFetching ||
+    anomaliesQuery.isFetching ||
+    areasQuery.isFetching ||
+    plansQuery.isFetching ||
+    floorplansQuery.isFetching;
+
+  // Aggiornamento ottimistico della cache dopo una scrittura riuscita.
+  const setDocuments = (updater: (prev: PestDocument[]) => PestDocument[]) =>
+    queryClient.setQueryData<PestDocument[]>(queryKeys.pest.list(companyId, 'documents'), (prev) =>
+      updater(prev ?? []),
+    );
+
+  // Errore di lettura: mantiene il feedback che c'era con il caricamento manuale.
   useEffect(() => {
-    void load();
-  }, [load]);
+    if (
+      !documentsQuery.isError &&
+      !stationsQuery.isError &&
+      !productsQuery.isError &&
+      !interventionsQuery.isError &&
+      !externalCompaniesQuery.isError &&
+      !anomaliesQuery.isError &&
+      !areasQuery.isError &&
+      !plansQuery.isError &&
+      !floorplansQuery.isError
+    ) {
+      return;
+    }
+    const err =
+      documentsQuery.error ??
+      stationsQuery.error ??
+      productsQuery.error ??
+      interventionsQuery.error ??
+      externalCompaniesQuery.error ??
+      anomaliesQuery.error ??
+      areasQuery.error ??
+      plansQuery.error ??
+      floorplansQuery.error;
+    toast.error(err instanceof ApiError ? err.message : 'Impossibile caricare l’archivio documenti');
+  }, [
+    documentsQuery.isError,
+    documentsQuery.error,
+    stationsQuery.isError,
+    stationsQuery.error,
+    productsQuery.isError,
+    productsQuery.error,
+    interventionsQuery.isError,
+    interventionsQuery.error,
+    externalCompaniesQuery.isError,
+    externalCompaniesQuery.error,
+    anomaliesQuery.isError,
+    anomaliesQuery.error,
+    areasQuery.isError,
+    areasQuery.error,
+    plansQuery.isError,
+    plansQuery.error,
+    floorplansQuery.isError,
+    floorplansQuery.error,
+  ]);
 
   const stats = useMemo(
     () => ({
@@ -238,8 +305,26 @@ export function PestDocumentsPanel({ companyId }: Props) {
               </div>
             </div>
             <div className="flex flex-wrap gap-2">
-              <Button variant="ghost" size="icon" className="h-11 w-11 sm:h-10 sm:w-10" onClick={() => void load()} title="Aggiorna">
-                {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-11 w-11 sm:h-10 sm:w-10"
+                onClick={() =>
+                  void Promise.all([
+                    documentsQuery.refetch(),
+                    stationsQuery.refetch(),
+                    productsQuery.refetch(),
+                    interventionsQuery.refetch(),
+                    externalCompaniesQuery.refetch(),
+                    anomaliesQuery.refetch(),
+                    areasQuery.refetch(),
+                    plansQuery.refetch(),
+                    floorplansQuery.refetch(),
+                  ])
+                }
+                title="Aggiorna"
+              >
+                {refreshing ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
               </Button>
               <Button onClick={openCreate}>
                 <Plus className="mr-2 h-4 w-4" /> Nuovo documento

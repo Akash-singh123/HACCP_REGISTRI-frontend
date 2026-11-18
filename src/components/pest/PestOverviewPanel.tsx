@@ -2,8 +2,9 @@
 // Panoramica del modulo controllo infestanti: statistiche reali e ultimi controlli.
 // I numeri arrivano dall'Edge Function (conteggi sul database), non sono mai finti.
 
-import { useEffect, useState } from 'react';
-import { api, ApiError, type PestOverview } from '@/lib/api';
+import { useEffect } from 'react';
+import { ApiError } from '@/lib/api';
+import { usePestOverview } from '@/hooks/useHaccpQueries';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -36,25 +37,17 @@ interface StatCard {
 }
 
 export function PestOverviewPanel({ companyId }: Props) {
-  const [overview, setOverview] = useState<PestOverview | null>(null);
-  const [loading, setLoading] = useState(true);
+  // Panoramica via React Query: stessa cache condivisa del modulo.
+  const overviewQuery = usePestOverview(companyId);
+  const overview = overviewQuery.data ?? null;
+  const loading = overviewQuery.isPending;
 
-  const load = async () => {
-    setLoading(true);
-    try {
-      setOverview(await api.pest.overview(companyId));
-    } catch (err) {
-      const message = err instanceof ApiError ? err.message : 'Impossibile caricare la panoramica';
-      toast.error(message);
-    } finally {
-      setLoading(false);
-    }
-  };
-
+  // Errore di lettura: mantiene il feedback che c'era con il caricamento manuale.
   useEffect(() => {
-    void load();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [companyId]);
+    if (!overviewQuery.isError) return;
+    const err = overviewQuery.error;
+    toast.error(err instanceof ApiError ? err.message : 'Impossibile caricare la panoramica');
+  }, [overviewQuery.isError, overviewQuery.error]);
 
   const cards: StatCard[] = overview
     ? [
@@ -116,8 +109,8 @@ export function PestOverviewPanel({ companyId }: Props) {
     <div className="space-y-6 pt-2">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h4 className="section-title">Stato del monitoraggio</h4>
-        <Button variant="ghost" size="sm" onClick={() => void load()} disabled={loading}>
-          {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+        <Button variant="ghost" size="sm" onClick={() => void overviewQuery.refetch()} disabled={overviewQuery.isFetching}>
+          {overviewQuery.isFetching ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
           Aggiorna
         </Button>
       </div>

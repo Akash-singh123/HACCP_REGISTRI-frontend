@@ -53,6 +53,7 @@ import { z } from 'zod';
 import { zodResolver } from '@hookform/resolvers/zod';
 import jsPDF from 'jspdf';
 import { useIncomingFoodsStore, IncomingFood } from '@/store/incomingFoodsStore';
+import { useLocationsStore } from '@/store/locationsStore';
 import { cn } from '@/lib/utils';
 
 const REGISTRY_CSV = 'Registro_Semilavorati.csv';
@@ -180,6 +181,9 @@ export default function Semilavorati({
     consumeBatch,
   } = useSemiProductsStore();
   const { items: incomingItems, load: loadIncomingFoods } = useIncomingFoodsStore();
+  // Sede attiva: i lotti di semilavorato sono filtrati per sede, quindi al
+  // cambio sede l'elenco viene ricaricato.
+  const activeLocationId = useLocationsStore((s) => s.activeId);
   const { confirm, confirmDialog } = useConfirm();
   const { company } = useAuth();
   const { loaded: printersLoaded, load: loadPrinters, defaultPrinter } = usePrintersStore();
@@ -212,9 +216,9 @@ export default function Semilavorati({
 
   useEffect(() => { load(); }, [load]);
   // Carica i lotti di produzione registrati (tracciabilità, scadenze, archivio).
-  useEffect(() => { loadBatches(); }, [loadBatches]);
+  useEffect(() => { loadBatches(); }, [loadBatches, activeLocationId]);
   // Carica l'archivio degli alimenti in ingresso (per i lotti)
-  useEffect(() => { loadIncomingFoods(); }, [loadIncomingFoods]);
+  useEffect(() => { loadIncomingFoods(); }, [loadIncomingFoods, activeLocationId]);
   // Carica le stampanti configurate (per "Salva e stampa etichetta").
   useEffect(() => { if (!printersLoaded) void loadPrinters(); }, [printersLoaded, loadPrinters]);
 

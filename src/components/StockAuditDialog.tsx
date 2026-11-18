@@ -6,7 +6,7 @@
 // automatiche del job di scadenza (mostrate come "Sistema"). I dati arrivano
 // dall'audit log dell'azienda tramite `activeData.stock.audit`.
 
-import { useCallback, useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -23,8 +23,8 @@ import {
   RotateCcw,
   type LucideIcon,
 } from 'lucide-react';
-import { activeData, type StockAuditEntry } from '@/lib/api';
 import { cn } from '@/lib/utils';
+import { useStockAudit } from '@/hooks/useHaccpQueries';
 
 type Scope = 'all' | 'incoming_foods' | 'semi_product_batches';
 
@@ -90,38 +90,21 @@ export function StockAuditDialog({
   defaultScope?: Scope;
 }) {
   const [scope, setScope] = useState<Scope>(defaultScope);
-  const [items, setItems] = useState<StockAuditEntry[] | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
 
-  const load = useCallback(async (target: Scope) => {
-    setLoading(true);
-    setError(null);
-    try {
-      const res = await activeData.stock.audit({
-        entity: target === 'all' ? undefined : target,
-        limit: 100,
-      });
-      setItems(res.items);
-    } catch (err) {
-      setError((err as Error).message || 'Storico non disponibile');
-      setItems([]);
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  // Ricarica a ogni apertura e al cambio di filtro.
+  // A ogni apertura si riparte dal filtro iniziale.
   useEffect(() => {
-    if (!open) return;
-    setScope(defaultScope);
-    void load(defaultScope);
-  }, [open, defaultScope, load]);
+    if (open) setScope(defaultScope);
+  }, [open, defaultScope]);
 
-  const changeScope = (next: Scope) => {
-    setScope(next);
-    void load(next);
-  };
+  // Lettura tramite React Query: sospesa finché il dialogo è chiuso.
+  const auditQuery = useStockAudit(scope, open);
+  const items = auditQuery.data;
+  const loading = auditQuery.isFetching;
+  const error = auditQuery.error
+    ? (auditQuery.error as Error).message || 'Storico non disponibile'
+    : null;
+
+  const changeScope = (next: Scope) => setScope(next);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -163,7 +146,7 @@ export function StockAuditDialog({
             variant="ghost"
             size="icon"
             className="ml-auto h-8 w-8"
-            onClick={() => void load(scope)}
+            onClick={() => void auditQuery.refetch()}
             disabled={loading}
             title="Aggiorna"
             aria-label="Aggiorna storico"

@@ -4,14 +4,16 @@
 // completo (§7.4) su più postazioni.
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import {
-  api,
   ApiError,
   type PestArea,
   type PestInspection,
   type PestStation,
   type PestStationType,
 } from '@/lib/api';
+import { usePestList } from '@/hooks/useHaccpQueries';
+import { queryKeys } from '@/lib/queryKeys';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -30,12 +32,14 @@ interface Props {
   companyId: string;
 }
 
+// Array vuoti con identità stabile a livello di modulo.
+const EMPTY_STATIONS: PestStation[] = [];
+const EMPTY_TYPES: PestStationType[] = [];
+const EMPTY_AREAS: PestArea[] = [];
+const EMPTY_INSPECTIONS: PestInspection[] = [];
+
 export function PestInspectionsPanel({ companyId }: Props) {
-  const [stations, setStations] = useState<PestStation[]>([]);
-  const [types, setTypes] = useState<PestStationType[]>([]);
-  const [areas, setAreas] = useState<PestArea[]>([]);
-  const [inspections, setInspections] = useState<PestInspection[]>([]);
-  const [loading, setLoading] = useState(true);
+  const queryClient = useQueryClient();
 
   const [formOpen, setFormOpen] = useState(false);
   const [walkOpen, setWalkOpen] = useState(false);
@@ -44,29 +48,52 @@ export function PestInspectionsPanel({ companyId }: Props) {
   const [filterOutcome, setFilterOutcome] = useState('__all');
   const [filterFrom, setFilterFrom] = useState('');
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    try {
-      const [stRes, tyRes, arRes, inRes] = await Promise.all([
-        api.pest.list<PestStation>(companyId, 'stations'),
-        api.pest.list<PestStationType>(companyId, 'stationTypes'),
-        api.pest.list<PestArea>(companyId, 'areas'),
-        api.pest.list<PestInspection>(companyId, 'inspections'),
-      ]);
-      setStations(stRes.items);
-      setTypes(tyRes.items);
-      setAreas(arRes.items);
-      setInspections(inRes.items);
-    } catch (err) {
-      toast.error(err instanceof ApiError ? err.message : 'Impossibile caricare i controlli');
-    } finally {
-      setLoading(false);
-    }
-  }, [companyId]);
+  // Letture del modulo via React Query: stessa cache condivisa con gli altri pannelli.
+  const stationsQuery = usePestList<PestStation>(companyId, 'stations');
+  const typesQuery = usePestList<PestStationType>(companyId, 'stationTypes');
+  const areasQuery = usePestList<PestArea>(companyId, 'areas');
+  const inspectionsQuery = usePestList<PestInspection>(companyId, 'inspections');
 
+  const stations = stationsQuery.data ?? EMPTY_STATIONS;
+  const types = typesQuery.data ?? EMPTY_TYPES;
+  const areas = areasQuery.data ?? EMPTY_AREAS;
+  const inspections = inspectionsQuery.data ?? EMPTY_INSPECTIONS;
+
+  // Skeleton finché i dati iniziali non sono pronti (stessa semantica del load manuale).
+  const loading =
+    stationsQuery.isPending || typesQuery.isPending || areasQuery.isPending || inspectionsQuery.isPending;
+  const refreshing =
+    stationsQuery.isFetching || typesQuery.isFetching || areasQuery.isFetching || inspectionsQuery.isFetching;
+
+  // Aggiornamento ottimistico della cache dopo una scrittura riuscita.
+  const setInspections = (updater: (prev: PestInspection[]) => PestInspection[]) =>
+    queryClient.setQueryData<PestInspection[]>(queryKeys.pest.list(companyId, 'inspections'), (prev) =>
+      updater(prev ?? []),
+    );
+
+  // Errore di lettura: mantiene il feedback che c'era con il caricamento manuale.
   useEffect(() => {
-    void load();
-  }, [load]);
+    if (
+      !stationsQuery.isError &&
+      !typesQuery.isError &&
+      !areasQuery.isError &&
+      !inspectionsQuery.isError
+    ) {
+      return;
+    }
+    const err =
+      stationsQuery.error ?? typesQuery.error ?? areasQuery.error ?? inspectionsQuery.error;
+    toast.error(err instanceof ApiError ? err.message : 'Impossibile caricare i controlli');
+  }, [
+    stationsQuery.isError,
+    stationsQuery.error,
+    typesQuery.isError,
+    typesQuery.error,
+    areasQuery.isError,
+    areasQuery.error,
+    inspectionsQuery.isError,
+    inspectionsQuery.error,
+  ]);
 
   const stationOf = useCallback((id: string) => stations.find((s) => s.id === id) ?? null, [stations]);
   const stationLabel = useCallback(
@@ -127,8 +154,21 @@ export function PestInspectionsPanel({ companyId }: Props) {
               </div>
             </div>
             <div className="flex flex-wrap gap-2">
-              <Button variant="ghost" size="icon" className="h-11 w-11 sm:h-10 sm:w-10" onClick={() => void load()} title="Aggiorna">
-                {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-11 w-11 sm:h-10 sm:w-10"
+                onClick={() =>
+                  void Promise.all([
+                    stationsQuery.refetch(),
+                    typesQuery.refetch(),
+                    areasQuery.refetch(),
+                    inspectionsQuery.refetch(),
+                  ])
+                }
+                title="Aggiorna"
+              >
+                {refreshing ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
               </Button>
               <Button variant="outline" onClick={() => setWalkOpen(true)} disabled={dueStations.length === 0}>
                 <Route className="mr-2 h-4 w-4" /> Giro di controllo

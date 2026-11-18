@@ -4,29 +4,32 @@
 // monitoraggio. I dati arrivano sempre dall'Edge Function "pest-control":
 // nessun dato dimostrativo, nessuna simulazione.
 
-import { useEffect, useRef, useState } from 'react';
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import { useAuth } from '@/hooks/useAuth';
-import { api, type PestArea, type PestStationType } from '@/lib/api';
+import { usePestAreas, usePestStationTypes } from '@/hooks/useHaccpQueries';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { AlertCircle, AlertTriangle, ArrowRight, Bug, Building2, CalendarClock, CheckCircle2, ClipboardCheck, FileDown, FileText, FlaskConical, History, LayoutDashboard, Loader2, Map, MapPin, Rat, Shapes, SprayCan, Sun } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { PestOverviewPanel } from './PestOverviewPanel';
-import { PestFloorplanPanel } from './PestFloorplanPanel';
-import { PestStationsPanel } from './PestStationsPanel';
-import { PestInspectionsPanel } from './PestInspectionsPanel';
-import { PestInterventionsPanel } from './PestInterventionsPanel';
-import { PestUvPanel } from './PestUvPanel';
-import { PestProductsPanel } from './PestProductsPanel';
-import { PestExternalCompaniesPanel } from './PestExternalCompaniesPanel';
-import { PestAreasPanel } from './PestAreasPanel';
-import { PestStationTypesPanel } from './PestStationTypesPanel';
-import { PestAnomaliesPanel } from './PestAnomaliesPanel';
-import { PestSchedulesPanel } from './PestSchedulesPanel';
-import { PestDocumentsPanel } from './PestDocumentsPanel';
-import { PestReportsPanel } from './PestReportsPanel';
-import { PestAuditPanel } from './PestAuditPanel';
+// Ogni scheda è un pannello pesante (tabelle, form, PDF): vengono caricati on
+// demand alla prima apertura, così il chunk del modulo resta leggero e si
+// scarica solo ciò che l'utente consulta davvero.
+const PestOverviewPanel = lazy(() => import('./PestOverviewPanel').then((m) => ({ default: m.PestOverviewPanel })));
+const PestFloorplanPanel = lazy(() => import('./PestFloorplanPanel').then((m) => ({ default: m.PestFloorplanPanel })));
+const PestStationsPanel = lazy(() => import('./PestStationsPanel').then((m) => ({ default: m.PestStationsPanel })));
+const PestInspectionsPanel = lazy(() => import('./PestInspectionsPanel').then((m) => ({ default: m.PestInspectionsPanel })));
+const PestInterventionsPanel = lazy(() => import('./PestInterventionsPanel').then((m) => ({ default: m.PestInterventionsPanel })));
+const PestUvPanel = lazy(() => import('./PestUvPanel').then((m) => ({ default: m.PestUvPanel })));
+const PestProductsPanel = lazy(() => import('./PestProductsPanel').then((m) => ({ default: m.PestProductsPanel })));
+const PestExternalCompaniesPanel = lazy(() => import('./PestExternalCompaniesPanel').then((m) => ({ default: m.PestExternalCompaniesPanel })));
+const PestAreasPanel = lazy(() => import('./PestAreasPanel').then((m) => ({ default: m.PestAreasPanel })));
+const PestStationTypesPanel = lazy(() => import('./PestStationTypesPanel').then((m) => ({ default: m.PestStationTypesPanel })));
+const PestAnomaliesPanel = lazy(() => import('./PestAnomaliesPanel').then((m) => ({ default: m.PestAnomaliesPanel })));
+const PestSchedulesPanel = lazy(() => import('./PestSchedulesPanel').then((m) => ({ default: m.PestSchedulesPanel })));
+const PestDocumentsPanel = lazy(() => import('./PestDocumentsPanel').then((m) => ({ default: m.PestDocumentsPanel })));
+const PestReportsPanel = lazy(() => import('./PestReportsPanel').then((m) => ({ default: m.PestReportsPanel })));
+const PestAuditPanel = lazy(() => import('./PestAuditPanel').then((m) => ({ default: m.PestAuditPanel })));
 
 type PestTabKey =
   | 'panoramica'
@@ -87,9 +90,6 @@ interface Props {
 export default function PestControl({ initialToken, onTokenConsumed }: Props) {
   const { company, role } = useAuth();
   const [tab, setTab] = useState<PestTabKey>(initialToken ? 'postazioni' : 'panoramica');
-  // Anagrafiche di base: servono a guidare la configurazione (aree/zone prima
-  // di postazioni, lampade, controlli…). null = non ancora letto.
-  const [config, setConfig] = useState<{ areas: number; types: number } | null>(null);
 
   const companyId = company?.id ?? null;
   const activeTab = PEST_TABS.find((t) => t.key === tab) ?? PEST_TABS[0];
@@ -113,27 +113,33 @@ export default function PestControl({ initialToken, onTokenConsumed }: Props) {
     if (initialToken) setTab('postazioni');
   }, [initialToken]);
 
+  // Anagrafiche di base (aree/zone e tipi di postazione) lette via React Query:
+  // la cache è condivisa con gli altri moduli e il conteggio guida la
+  // configurazione (aree/zone prima di postazioni, lampade, controlli…).
+  const areasQuery = usePestAreas(companyId);
+  const stationTypesQuery = usePestStationTypes(companyId);
+  const config = useMemo(() => {
+    if (!areasQuery.data || !stationTypesQuery.data) return null;
+    return { areas: areasQuery.data.length, types: stationTypesQuery.data.length };
+  }, [areasQuery.data, stationTypesQuery.data]);
+
   // Rilegge le anagrafiche a ogni cambio scheda: così, dopo aver creato le aree,
   // il blocco sulle schede dipendenti si sblocca automaticamente.
+  const firstTabRef = useRef(true);
+  const refetchAreas = areasQuery.refetch;
+  const refetchTypes = stationTypesQuery.refetch;
   useEffect(() => {
     if (!companyId) return;
     // Serve solo in Panoramica (guida) e nelle schede con dipendenze.
     if (tab !== 'panoramica' && !activeTab.requires) return;
-    let cancelled = false;
-    Promise.all([
-      api.pest.list<PestArea>(companyId, 'areas'),
-      api.pest.list<PestStationType>(companyId, 'stationTypes'),
-    ])
-      .then(([a, t]) => {
-        if (!cancelled) setConfig({ areas: a.items.length, types: t.items.length });
-      })
-      .catch(() => {
-        // Se la lettura fallisce non blocchiamo nulla: il pannello mostrerà l'errore.
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [companyId, tab]);
+    // Salta la prima esecuzione: all'avvio le query hanno appena caricato i dati.
+    if (firstTabRef.current) {
+      firstTabRef.current = false;
+      return;
+    }
+    void refetchAreas();
+    void refetchTypes();
+  }, [companyId, tab, activeTab, refetchAreas, refetchTypes]);
 
   // Dipendenze mancanti per la scheda corrente.
   const missing: ('areas' | 'types')[] = [];
@@ -220,7 +226,13 @@ export default function PestControl({ initialToken, onTokenConsumed }: Props) {
         {blocked ? (
           <PestSetupGate missing={missing} onGoTo={setTab} />
         ) : (
-          <>
+          <Suspense
+            fallback={
+              <div className="flex h-64 items-center justify-center">
+                <Loader2 className="h-7 w-7 animate-spin text-muted-foreground" />
+              </div>
+            }
+          >
             {tab === 'panoramica' && <PestOverviewPanel companyId={companyId} />}
             {tab === 'planimetria' && <PestFloorplanPanel companyId={companyId} />}
             {tab === 'postazioni' && (
@@ -239,7 +251,7 @@ export default function PestControl({ initialToken, onTokenConsumed }: Props) {
             {tab === 'aree' && <PestAreasPanel companyId={companyId} />}
             {tab === 'tipi' && <PestStationTypesPanel companyId={companyId} />}
             {tab === 'storico' && <PestAuditPanel companyId={companyId} />}
-          </>
+          </Suspense>
         )}
       </div>
     </div>

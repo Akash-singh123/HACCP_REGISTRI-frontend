@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { api } from '@/lib/api';
+import { api, getActiveLocation } from '@/lib/api';
 
 export const ALLERGEN_LIST = [
   {
@@ -197,7 +197,7 @@ export const useAllergenProductsStore = create<AllergenProductsState>((set, get)
     if (!cid) return;
     set({ loading: true });
     try {
-      const { products } = await api.allergenTable.list(cid);
+      const { products } = await api.allergenTable.list(cid, getActiveLocation() ?? undefined);
       set({ products: products.map(mapRow) });
     } finally {
       set({ loading: false });
@@ -209,7 +209,8 @@ export const useAllergenProductsStore = create<AllergenProductsState>((set, get)
     await api.allergenTable.upsert(cid, {
       name: product.nome,
       description: product.descrizione,
-      allergens: product.allergeni
+      allergens: product.allergeni,
+      locationId: getActiveLocation() ?? undefined,
     });
     await get().fetchProducts();
   },

@@ -4,10 +4,14 @@
 // token opaco. La risoluzione token -> postazione avviene lato server e richiede
 // un utente autenticato membro dell'azienda (isolamento multi-tenant garantito).
 
-import QRCode from 'qrcode';
-import jsPDF from 'jspdf';
+// qrcode e jspdf (~450 kB in due) servono solo quando si genera davvero un QR o
+// si esporta il PDF delle etichette: vengono caricati on demand, così i pannelli
+// che li usano (postazioni, dialog QR) restano leggeri finché non servono.
 import type { PestStation } from '@/lib/api';
 import { statusMeta } from './pestMeta';
+
+const loadQrCode = () => import('qrcode').then((m) => m.default);
+const loadJsPdf = () => import('jspdf').then((m) => m.default);
 
 /** Contenuto codificato nel QR: deep-link all'app con il token della postazione. */
 export function buildQrPayload(token: string): string {
@@ -34,7 +38,8 @@ export function extractQrToken(text: string): string | null {
 }
 
 /** Genera un QR in formato data URL PNG (per canvas/PDF/big-image). */
-export function qrToDataUrl(text: string, size = 320): Promise<string> {
+export async function qrToDataUrl(text: string, size = 320): Promise<string> {
+  const QRCode = await loadQrCode();
   return QRCode.toDataURL(text, { width: size, margin: 1, errorCorrectionLevel: 'M' });
 }
 
@@ -50,6 +55,7 @@ interface LabelMeta {
 export async function exportQrLabelsPdf(stations: PestStation[], meta: Map<string, LabelMeta>, companyName?: string): Promise<void> {
   if (stations.length === 0) return;
 
+  const jsPDF = await loadJsPdf();
   const doc = new jsPDF('portrait', 'mm', 'a4');
   const pageW = doc.internal.pageSize.getWidth();
   const pageH = doc.internal.pageSize.getHeight();

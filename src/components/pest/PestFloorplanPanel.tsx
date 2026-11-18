@@ -3,7 +3,8 @@
 // L'immagine della pianta è caricata nello spazio documenti dell'azienda
 // (bucket privato); le coordinate delle postazioni sono normalizzate (0..1).
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import {
   api,
   ApiError,
@@ -12,12 +13,13 @@ import {
   type PestStation,
   type PestStationType,
 } from '@/lib/api';
+import { usePestList } from '@/hooks/useHaccpQueries';
+import { queryKeys } from '@/lib/queryKeys';
 import { useAuth } from '@/hooks/useAuth';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Input } from '@/components/ui/input';
 import { useConfirm } from '@/components/ConfirmDialog';
 import { blobToBase64 } from '@/lib/docs';
 import { cn } from '@/lib/utils';
@@ -33,15 +35,17 @@ interface Props {
   companyId: string;
 }
 
+// Array vuoti con identità stabile a livello di modulo.
+const EMPTY_FLOORPLANS: PestFloorplan[] = [];
+const EMPTY_STATIONS: PestStation[] = [];
+const EMPTY_AREAS: PestArea[] = [];
+const EMPTY_TYPES: PestStationType[] = [];
+
 export function PestFloorplanPanel({ companyId }: Props) {
   const { company } = useAuth();
   const { confirm, confirmDialog } = useConfirm();
+  const queryClient = useQueryClient();
 
-  const [floorplans, setFloorplans] = useState<PestFloorplan[]>([]);
-  const [stations, setStations] = useState<PestStation[]>([]);
-  const [areas, setAreas] = useState<PestArea[]>([]);
-  const [types, setTypes] = useState<PestStationType[]>([]);
-  const [loading, setLoading] = useState(true);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [imageUrl, setImageUrl] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
@@ -56,32 +60,61 @@ export function PestFloorplanPanel({ companyId }: Props) {
 
   const fileRef = useRef<HTMLInputElement>(null);
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    try {
-      const [fpRes, stRes, arRes, tyRes] = await Promise.all([
-        api.pest.list<PestFloorplan>(companyId, 'floorplans'),
-        api.pest.list<PestStation>(companyId, 'stations'),
-        api.pest.list<PestArea>(companyId, 'areas'),
-        api.pest.list<PestStationType>(companyId, 'stationTypes'),
-      ]);
-      setFloorplans(fpRes.items);
-      setStations(stRes.items);
-      setAreas(arRes.items);
-      setTypes(tyRes.items);
-      setSelectedId((prev) => prev ?? fpRes.items[0]?.id ?? null);
-    } catch (err) {
-      toast.error(err instanceof ApiError ? err.message : 'Impossibile caricare le planimetrie');
-    } finally {
-      setLoading(false);
-    }
-  }, [companyId]);
+  // Letture del modulo via React Query: stessa cache condivisa con gli altri pannelli.
+  const floorplansQuery = usePestList<PestFloorplan>(companyId, 'floorplans');
+  const stationsQuery = usePestList<PestStation>(companyId, 'stations');
+  const areasQuery = usePestList<PestArea>(companyId, 'areas');
+  const typesQuery = usePestList<PestStationType>(companyId, 'stationTypes');
 
+  const floorplans = floorplansQuery.data ?? EMPTY_FLOORPLANS;
+  const stations = stationsQuery.data ?? EMPTY_STATIONS;
+  const areas = areasQuery.data ?? EMPTY_AREAS;
+  const types = typesQuery.data ?? EMPTY_TYPES;
+
+  const loading =
+    floorplansQuery.isPending || stationsQuery.isPending || areasQuery.isPending || typesQuery.isPending;
+
+  // Aggiornamento ottimistico della cache dopo una scrittura riuscita.
+  const setFloorplans = (updater: (prev: PestFloorplan[]) => PestFloorplan[]) =>
+    queryClient.setQueryData<PestFloorplan[]>(queryKeys.pest.list(companyId, 'floorplans'), (prev) =>
+      updater(prev ?? []),
+    );
+  const setStations = (updater: (prev: PestStation[]) => PestStation[]) =>
+    queryClient.setQueryData<PestStation[]>(queryKeys.pest.list(companyId, 'stations'), (prev) => updater(prev ?? []));
+
+  // Errore di lettura: mantiene il feedback che c'era con il caricamento manuale.
   useEffect(() => {
-    void load();
-  }, [load]);
+    if (
+      !floorplansQuery.isError &&
+      !stationsQuery.isError &&
+      !areasQuery.isError &&
+      !typesQuery.isError
+    ) {
+      return;
+    }
+    const err = floorplansQuery.error ?? stationsQuery.error ?? areasQuery.error ?? typesQuery.error;
+    toast.error(err instanceof ApiError ? err.message : 'Impossibile caricare le planimetrie');
+  }, [
+    floorplansQuery.isError,
+    floorplansQuery.error,
+    stationsQuery.isError,
+    stationsQuery.error,
+    areasQuery.isError,
+    areasQuery.error,
+    typesQuery.isError,
+    typesQuery.error,
+  ]);
 
   const selected = useMemo(() => floorplans.find((f) => f.id === selectedId) ?? null, [floorplans, selectedId]);
+
+  // Alla prima lettura seleziona automaticamente la prima planimetria disponibile.
+  const seededRef = useRef(false);
+  useEffect(() => {
+    const data = floorplansQuery.data;
+    if (!data || seededRef.current) return;
+    seededRef.current = true;
+    setSelectedId((prev) => prev ?? data[0]?.id ?? null);
+  }, [floorplansQuery.data]);
 
   // Carica il link firmato dell'immagine della planimetria selezionata.
   useEffect(() => {
@@ -197,7 +230,7 @@ export function PestFloorplanPanel({ companyId }: Props) {
     try {
       await api.pest.upsert<PestStation>(companyId, 'stations', { id: station.id, pos_x: pos.x, pos_y: pos.y });
     } catch (err) {
-      setStations(prev);
+      setStations(() => prev);
       toast.error(err instanceof ApiError ? err.message : 'Spostamento non salvato');
     }
   };

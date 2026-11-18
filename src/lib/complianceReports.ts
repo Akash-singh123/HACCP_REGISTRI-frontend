@@ -7,7 +7,10 @@
 // senza dipendenze aggiuntive. Nessun dato viene inventato: le sezioni prive di
 // elementi riportano un messaggio esplicito.
 
-import jsPDF from 'jspdf';
+// jsPDF (~330 kB) serve solo alla generazione del PDF di conformità: viene
+// caricato on demand alla prima esportazione per non appesantire il bundle
+// della pagina Cruscotto (il tipo è cancellato in compilazione).
+import type { jsPDF } from 'jspdf';
 import type {
   AlertBreakdown,
   ComplianceScore,
@@ -18,6 +21,9 @@ import type {
 import type { DateRange } from './compliance';
 import type { PestAuditEntry } from './api';
 import { buildXlsxBlob, type XlsxSheet } from './xlsx';
+
+/** Caricatore on demand di jsPDF (la promessa è memorizzata dal bundler). */
+const loadJsPdf = () => import('jspdf').then((m) => m.jsPDF);
 
 const MARGIN = 15;
 const EMPTY_MESSAGE = 'Nessun elemento registrato nel periodo selezionato.';
@@ -313,9 +319,10 @@ function drawScorePanel(pdf: jsPDF, y: number, score: ComplianceScore): number {
 // ── Costruzione del PDF ────────────────────────────────────────────────────
 
 /** Costruisce il documento PDF del cruscotto di conformità. */
-export function buildCompliancePdf(data: ComplianceReportData): jsPDF {
+export async function buildCompliancePdf(data: ComplianceReportData): Promise<jsPDF> {
+  const JsPDF = await loadJsPdf();
   // Le tabelle sono larghe (non conformità, temperature): formato orizzontale.
-  const pdf = new jsPDF('landscape', 'mm', 'a4');
+  const pdf = new JsPDF('landscape', 'mm', 'a4');
 
   let y = drawHeader(pdf, data.company, data.periodLabel);
 

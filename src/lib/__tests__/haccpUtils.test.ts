@@ -7,8 +7,11 @@ import {
   generateDateRange,
   generateDefaultCleaning,
   createHaccpRecord,
+  DEFAULT_CLEANING,
+  cleaningChecksToMap,
+  formStateFromRecord,
 } from '@/lib/haccpUtils';
-import type { CompanyInfo } from '@/types/haccp';
+import type { CompanyInfo, HaccpRecord } from '@/types/haccp';
 
 // Le funzioni pure di haccpUtils non toccano la rete; i moduli pesanti con
 // effetti collaterali (API, firma OSA) vengono sostituiti con stub.
@@ -149,5 +152,77 @@ describe('createHaccpRecord', () => {
     expect(record.temperatures).toHaveProperty('freezer');
     expect(record.temperatures).toHaveProperty('fridge1');
     expect(record.temperatures).toHaveProperty('fridge2');
+  });
+});
+
+describe('cleaningChecksToMap', () => {
+  it('mappa ogni voce sull\'id dell\'attività', () => {
+    expect(
+      cleaningChecksToMap([
+        { itemId: 'a', area: 'Cucina', activity: 'Pavimenti', done: true },
+        { itemId: 'b', area: 'Magazzino', activity: 'Scaffali', done: false },
+      ])
+    ).toEqual({ a: true, b: false });
+  });
+});
+
+describe('formStateFromRecord', () => {
+  const RECORD: HaccpRecord = {
+    id: 'haccp_2025-05-10_1',
+    date: '2025-05-10',
+    temperatures: { freezer: -19, frigo1: 3 },
+    cleaning: { ...DEFAULT_CLEANING, floors: false },
+    cleaningPlan: [
+      { itemId: 'a', area: 'Cucina', activity: 'Pavimenti', done: true },
+      { itemId: 'b', area: 'Magazzino', activity: 'Scaffali', done: false },
+    ],
+    notes: 'Nota del giorno',
+    signature: 'data:image/png;base64,AAA',
+    createdAt: '2025-05-10T08:00:00.000Z',
+    updatedAt: '2025-05-10T08:30:00.000Z',
+  };
+
+  it('ripristina i valori salvati del registro', () => {
+    const state = formStateFromRecord(RECORD);
+    expect(state.temperatures).toEqual({ freezer: -19, frigo1: 3 });
+    expect(state.cleaning).toEqual({ ...DEFAULT_CLEANING, floors: false });
+    expect(state.notes).toBe('Nota del giorno');
+    expect(state.signature).toBe('data:image/png;base64,AAA');
+    expect(state.planChecks).toEqual({ a: true, b: false });
+  });
+
+  it('senza registro restituisce un modulo vuoto', () => {
+    const state = formStateFromRecord(undefined);
+    expect(state.temperatures).toEqual({});
+    expect(state.notes).toBe('');
+    expect(state.signature).toBe('');
+    expect(state.planChecks).toEqual({});
+  });
+
+  it('senza registro non eredita la firma del giorno precedente', () => {
+    // Regressione: il modulo non si azzerava cambiando data verso un giorno
+    // privo di registro, col rischio di firmare quella giornata con la firma
+    // (e i dati) di un'altra.
+    const previous = formStateFromRecord(RECORD);
+    expect(previous.signature).not.toBe('');
+    expect(formStateFromRecord(undefined).signature).toBe('');
+  });
+
+  it('senza registro riporta tutte le aree di sanificazione a "da verificare"', () => {
+    const state = formStateFromRecord(undefined);
+    expect(state.cleaning).toEqual(DEFAULT_CLEANING);
+    expect(Object.values(state.cleaning).every(Boolean)).toBe(true);
+  });
+
+  it('con un registro storico privo di piano di sanificazione non inventa voci', () => {
+    const { cleaningPlan: _omit, ...legacy } = RECORD;
+    expect(formStateFromRecord(legacy as HaccpRecord).planChecks).toEqual({});
+  });
+
+  it('normalizza note e firma assenti in stringhe vuote', () => {
+    const { notes: _n, signature: _s, ...withoutFields } = RECORD;
+    const state = formStateFromRecord(withoutFields as HaccpRecord);
+    expect(state.notes).toBe('');
+    expect(state.signature).toBe('');
   });
 });

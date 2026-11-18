@@ -3,6 +3,7 @@
 // delle etichette QR in PDF. Ogni riga apre la scheda digitale della postazione.
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import {
   api,
   ApiError,
@@ -11,6 +12,8 @@ import {
   type PestStation,
   type PestStationType,
 } from '@/lib/api';
+import { usePestList } from '@/hooks/useHaccpQueries';
+import { queryKeys } from '@/lib/queryKeys';
 import { useAuth } from '@/hooks/useAuth';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -47,15 +50,17 @@ interface Props {
   onTokenConsumed?: () => void;
 }
 
+// Array vuoti con identità stabile a livello di modulo.
+const EMPTY_STATIONS: PestStation[] = [];
+const EMPTY_AREAS: PestArea[] = [];
+const EMPTY_TYPES: PestStationType[] = [];
+const EMPTY_INSPECTIONS: PestInspection[] = [];
+
 export function PestStationsPanel({ companyId, initialToken, onTokenConsumed }: Props) {
   const { company } = useAuth();
   const { confirm, confirmDialog } = useConfirm();
+  const queryClient = useQueryClient();
 
-  const [stations, setStations] = useState<PestStation[]>([]);
-  const [areas, setAreas] = useState<PestArea[]>([]);
-  const [types, setTypes] = useState<PestStationType[]>([]);
-  const [inspections, setInspections] = useState<PestInspection[]>([]);
-  const [loading, setLoading] = useState(true);
   const [exporting, setExporting] = useState(false);
 
   const [formOpen, setFormOpen] = useState(false);
@@ -72,29 +77,53 @@ export function PestStationsPanel({ companyId, initialToken, onTokenConsumed }: 
   const [inspectionOpen, setInspectionOpen] = useState(false);
   const [inspectionStationId, setInspectionStationId] = useState<string | null>(null);
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    try {
-      const [stRes, arRes, tyRes, inRes] = await Promise.all([
-        api.pest.list<PestStation>(companyId, 'stations'),
-        api.pest.list<PestArea>(companyId, 'areas'),
-        api.pest.list<PestStationType>(companyId, 'stationTypes'),
-        api.pest.list<PestInspection>(companyId, 'inspections'),
-      ]);
-      setStations(stRes.items);
-      setAreas(arRes.items);
-      setTypes(tyRes.items);
-      setInspections(inRes.items);
-    } catch (err) {
-      toast.error(err instanceof ApiError ? err.message : 'Impossibile caricare le postazioni');
-    } finally {
-      setLoading(false);
-    }
-  }, [companyId]);
+  // Letture del modulo via React Query: stessa cache condivisa con gli altri pannelli.
+  const stationsQuery = usePestList<PestStation>(companyId, 'stations');
+  const areasQuery = usePestList<PestArea>(companyId, 'areas');
+  const typesQuery = usePestList<PestStationType>(companyId, 'stationTypes');
+  const inspectionsQuery = usePestList<PestInspection>(companyId, 'inspections');
 
+  const stations = stationsQuery.data ?? EMPTY_STATIONS;
+  const areas = areasQuery.data ?? EMPTY_AREAS;
+  const types = typesQuery.data ?? EMPTY_TYPES;
+  const inspections = inspectionsQuery.data ?? EMPTY_INSPECTIONS;
+
+  // Skeleton finché i dati iniziali non sono pronti (stessa semantica del load manuale).
+  const loading =
+    stationsQuery.isPending || areasQuery.isPending || typesQuery.isPending || inspectionsQuery.isPending;
+  const refreshing =
+    stationsQuery.isFetching || areasQuery.isFetching || typesQuery.isFetching || inspectionsQuery.isFetching;
+
+  // Aggiornamento ottimistico della cache dopo una scrittura riuscita.
+  const setStations = (updater: (prev: PestStation[]) => PestStation[]) =>
+    queryClient.setQueryData<PestStation[]>(queryKeys.pest.list(companyId, 'stations'), (prev) => updater(prev ?? []));
+  const setInspections = (updater: (prev: PestInspection[]) => PestInspection[]) =>
+    queryClient.setQueryData<PestInspection[]>(queryKeys.pest.list(companyId, 'inspections'), (prev) =>
+      updater(prev ?? []),
+    );
+
+  // Errore di lettura: mantiene il feedback che c'era con il caricamento manuale.
   useEffect(() => {
-    void load();
-  }, [load]);
+    if (
+      !stationsQuery.isError &&
+      !areasQuery.isError &&
+      !typesQuery.isError &&
+      !inspectionsQuery.isError
+    ) {
+      return;
+    }
+    const err = stationsQuery.error ?? areasQuery.error ?? typesQuery.error ?? inspectionsQuery.error;
+    toast.error(err instanceof ApiError ? err.message : 'Impossibile caricare le postazioni');
+  }, [
+    stationsQuery.isError,
+    stationsQuery.error,
+    areasQuery.isError,
+    areasQuery.error,
+    typesQuery.isError,
+    typesQuery.error,
+    inspectionsQuery.isError,
+    inspectionsQuery.error,
+  ]);
 
   const areaName = useCallback((id: string | null) => areas.find((a) => a.id === id)?.name ?? null, [areas]);
   const typeOf = useCallback((id: string | null) => types.find((t) => t.id === id) ?? null, [types]);
@@ -230,8 +259,21 @@ export function PestStationsPanel({ companyId, initialToken, onTokenConsumed }: 
               </div>
             </div>
             <div className="flex flex-wrap gap-2">
-              <Button variant="ghost" size="icon" className="h-11 w-11 sm:h-10 sm:w-10" onClick={() => void load()} title="Aggiorna">
-                {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-11 w-11 sm:h-10 sm:w-10"
+                onClick={() =>
+                  void Promise.all([
+                    stationsQuery.refetch(),
+                    areasQuery.refetch(),
+                    typesQuery.refetch(),
+                    inspectionsQuery.refetch(),
+                  ])
+                }
+                title="Aggiorna"
+              >
+                {refreshing ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
               </Button>
               <Button variant="outline" onClick={() => setScanOpen(true)}>
                 <ScanLine className="mr-2 h-4 w-4" /> Scansiona QR

@@ -2,6 +2,7 @@
 // CRUD sulla tabella allergeni. La validazione dei 14 allergeni è SOLO server-side.
 
 import { guard, audit, json, errorResponse, HttpError, corsHeaders } from '../_shared/guard.ts';
+import { resolveLocationId } from '../_shared/locations.ts';
 
 // Elenco normativo UE (Reg. 1169/2011). Fonte di verità: il backend.
 const VALID_ALLERGENS = [
@@ -74,10 +75,14 @@ Deno.serve(async (req: Request) => {
 
     switch (action) {
       case 'list': {
+        // Le schede allergeni sono lette per la sede attiva; in assenza di
+        // indicazione vale la sede predefinita (aziende a sede unica invariate).
+        const locationId = await resolveLocationId(ctx, body.locationId);
         const { data, error } = await ctx.admin
           .from('allergen_products')
           .select('id, name, description, allergens, created_at, updated_at')
           .eq('company_id', ctx.companyId)
+          .eq('location_id', locationId)
           .order('created_at', { ascending: true });
         if (error) throw new HttpError(500, 'Errore lettura prodotti', 'db_error');
         return json({ products: data ?? [] });
@@ -106,9 +111,10 @@ Deno.serve(async (req: Request) => {
           return json({ product: data });
         }
 
+        const locationId = await resolveLocationId(ctx, body.locationId);
         const { data, error } = await ctx.admin
           .from('allergen_products')
-          .insert({ company_id: ctx.companyId, name, description, allergens })
+          .insert({ company_id: ctx.companyId, location_id: locationId, name, description, allergens })
           .select('id, name, description, allergens, created_at, updated_at')
           .single();
         if (error) throw new HttpError(500, 'Errore creazione prodotto', 'db_error');

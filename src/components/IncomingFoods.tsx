@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useIncomingFoodsStore, IncomingFood } from '@/store/incomingFoodsStore';
 import { useSemiProductsStore } from '@/store/semiProductsStore';
+import { useSuppliersStore } from '@/store/suppliersStore';
+import { useLocationsStore } from '@/store/locationsStore';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -134,12 +136,18 @@ export default function IncomingFoods({
 } = {}) {
   const { items, addItem, updateItem, setStatus, consumeItem, load } = useIncomingFoodsStore();
   const { templates, load: loadSemi } = useSemiProductsStore();
+  const { items: suppliers, load: loadSuppliers } = useSuppliersStore();
+  // Sede attiva: alimenti e semilavorati sono filtrati per sede, quindi al
+  // cambio sede l'elenco viene ricaricato.
+  const activeLocationId = useLocationsStore((s) => s.activeId);
   const { company } = useAuth();
   const { confirm, confirmDialog } = useConfirm();
   const [form, setForm] = useState({ ...EMPTY_FORM });
   const [editId, setEditId] = useState<string | null>(null);
   const [openNameSuggest, setOpenNameSuggest] = useState(false);
   const [nameQuery, setNameQuery] = useState('');
+  const [openSupplierSuggest, setOpenSupplierSuggest] = useState(false);
+  const [supplierQuery, setSupplierQuery] = useState('');
   const [scannerOpen, setScannerOpen] = useState(false);
   const [labelOpen, setLabelOpen] = useState(false);
   const [statusFilter, setStatusFilter] = useState<StockFilter>('attivi');
@@ -150,9 +158,11 @@ export default function IncomingFoods({
   // Registrazione del consumo di una scorta (blocco scaduti + FEFO).
   const [consumeState, setConsumeState] = useState<{ open: boolean; item?: IncomingFood }>({ open: false });
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => { load(); }, [load, activeLocationId]);
   // Assicura che i semilavorati siano caricati per avere gli ingredienti aggiornati
   useEffect(() => { loadSemi(); }, [loadSemi]);
+  // Anagrafica fornitori: alimenta i suggerimenti del campo Fornitore.
+  useEffect(() => { loadSuppliers(); }, [loadSuppliers]);
 
   // Regole di scadenza per azienda: le soglie possono variare per categoria.
   const rules = useMemo(() => readExpiryRules(company?.settings), [company?.settings]);
@@ -281,6 +291,15 @@ export default function IncomingFoods({
     const qNorm = normalize(q);
     return allIngredientNames.filter(n => normalize(n).includes(qNorm));
   }, [allIngredientNames, nameQuery]);
+
+  // Fornitori dell'anagrafica filtrati per la ricerca nel campo Fornitore.
+  const filteredSuppliers = useMemo(() => {
+    const q = supplierQuery.trim().toLowerCase();
+    if (!q) return suppliers;
+    return suppliers.filter((s) =>
+      [s.nome, s.categoria, s.referente].some((f) => f.toLowerCase().includes(q)),
+    );
+  }, [suppliers, supplierQuery]);
 
   const resetForm = () => {
     setForm({ ...EMPTY_FORM });
@@ -628,7 +647,43 @@ export default function IncomingFoods({
             </div>
             <div>
               <Label className="field-label">Fornitore</Label>
-              <Input value={form.fornitore} onChange={e => setForm(f => ({ ...f, fornitore: e.target.value }))} placeholder="es. Fornitore Srl" />
+              <div className="flex gap-2">
+                <Input
+                  value={form.fornitore}
+                  onFocus={() => { setSupplierQuery(form.fornitore || ''); setOpenSupplierSuggest(true); }}
+                  onChange={e => {
+                    const val = e.target.value;
+                    setForm(f => ({ ...f, fornitore: val }));
+                    setSupplierQuery(val);
+                  }}
+                  placeholder="es. Fornitore Srl"
+                  className="min-w-0 flex-1"
+                />
+                <Popover open={openSupplierSuggest} onOpenChange={setOpenSupplierSuggest}>
+                  <PopoverTrigger asChild>
+                    <Button type="button" variant="outline" className="shrink-0">Anagrafica</Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-[320px] max-w-[calc(100vw-1.5rem)] p-0">
+                    <Command>
+                      <CommandInput value={supplierQuery} onValueChange={setSupplierQuery} placeholder="Cerca fornitore..." />
+                      <CommandList>
+                        <CommandEmpty>Nessun fornitore in anagrafica</CommandEmpty>
+                        <CommandGroup heading="Fornitori registrati">
+                          {filteredSuppliers.map((s) => (
+                            <CommandItem key={s.id} value={s.nome} onSelect={() => {
+                              setForm(f => ({ ...f, fornitore: s.nome }));
+                              setOpenSupplierSuggest(false);
+                            }}>
+                              <span className="min-w-0 flex-1 truncate">{s.nome}</span>
+                              {s.categoria && <span className="ml-2 shrink-0 text-xs text-muted-foreground">{s.categoria}</span>}
+                            </CommandItem>
+                          ))}
+                        </CommandGroup>
+                      </CommandList>
+                    </Command>
+                  </PopoverContent>
+                </Popover>
+              </div>
             </div>
             <div>
               <Label className="field-label">Quantità</Label>

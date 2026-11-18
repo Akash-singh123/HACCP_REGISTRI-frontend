@@ -234,7 +234,7 @@ export function PrinterDialog({ open, onOpenChange, printer, restaurantName, onS
               <p className="text-xs text-warning">{searchError}</p>
             )}
 
-            <AddressFields connection={form.connection} address={form.address} target={form.target ?? ''} setAddress={setAddress} setTarget={(t) => set({ target: t })} />
+            <AddressFields connection={form.connection} address={form.address ?? {}} target={form.target ?? ''} setAddress={setAddress} setTarget={(t) => set({ target: t })} />
           </div>
 
           <Separator />

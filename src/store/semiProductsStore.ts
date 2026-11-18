@@ -1,20 +1,26 @@
 import { create } from 'zustand';
 import {
   activeData,
+  getActiveCompany,
+  getActiveLocation,
+  isOfflineError,
   type SemiProductBatch,
   type SemiProductBatchPayload,
   type SemiProductBatchPatch,
 } from '@/lib/api';
+import { type IngredientTemplate, type SemiProductTemplate } from '@/lib/schemas';
+import { enqueueMutation } from '@/lib/offlineQueue';
+import { subscribeAfterFlush } from '@/lib/recordSync';
+import { newId } from '@/lib/utils';
 
-export interface IngredientTemplate {
-  nome: string;
-}
-
-export interface SemiProductTemplate {
-  nome: string;
-  categoria?: string;
-  note?: string;
-  ingredienti: IngredientTemplate[];
+/** Accoda una modifica se c'è un'azienda attiva (altrimenti è un no-op). */
+function queueMutation(
+  kind: Parameters<typeof enqueueMutation>[1],
+  payload: Parameters<typeof enqueueMutation>[2],
+  clientId?: string
+): Promise<void> {
+  const companyId = getActiveCompany();
+  return companyId ? enqueueMutation(companyId, kind, payload, { clientId }) : Promise.resolve();
 }
 
 interface SemiProductsState {
@@ -73,13 +79,77 @@ export const useSemiProductsStore = create<SemiProductsState>((set, get) => {
       set({ batches: items, batchesLoaded: true });
     },
     addBatch: async (payload) => {
-      const { item } = await activeData.semi.batches.upsert(payload);
-      set({ batches: [item, ...get().batches] });
-      return item;
+      // Id provvisorio sul client: il lotto compare subito in elenco. Il backend
+      // assegna l'id definitivo (upsert per azienda+lotto) e al flush l'id locale
+      // viene riconciliato (vedi subscribeAfterFlush).
+      // La sede attiva viene fissata qui: i lotti sono organizzati per sede e il
+      // backend ricade sulla sede predefinita solo se non ne riceve una.
+      const nextPayload: SemiProductBatchPayload = {
+        ...payload,
+        locationId: payload.locationId ?? getActiveLocation() ?? undefined,
+      };
+      const tempId = newId();
+      const created: SemiProductBatch = {
+        id: tempId,
+        prodotto: nextPayload.prodotto,
+        lotto: nextPayload.lotto,
+        dataProduzione: nextPayload.dataProduzione ?? '',
+        dataScadenza: nextPayload.dataScadenza ?? '',
+        quantitaIniziale: nextPayload.quantitaIniziale ?? null,
+        quantitaResidua: nextPayload.quantitaResidua ?? nextPayload.quantitaIniziale ?? null,
+        unita: nextPayload.unita ?? '',
+        categoria: nextPayload.categoria ?? '',
+        ingredienti: nextPayload.ingredienti ?? [],
+        note: nextPayload.note ?? '',
+        stato: 'active',
+        archiviatoIl: null,
+        scartatoIl: null,
+        createdAt: Date.now(),
+      };
+      const previous = get().batches;
+      set({ batches: [created, ...previous] });
+      try {
+        const { item } = await activeData.semi.batches.upsert(nextPayload);
+        set({ batches: get().batches.map((b) => (b.id === tempId ? item : b)) });
+        return item;
+      } catch (err) {
+        if (isOfflineError(err)) {
+          await queueMutation('semi.batch.upsert', nextPayload, tempId);
+          return created;
+        }
+        set({ batches: previous });
+        throw err;
+      }
     },
     updateBatch: async (patch) => {
-      const { item } = await activeData.semi.batches.update(patch);
-      set({ batches: get().batches.map((b) => (b.id === item.id ? item : b)) });
+      const previous = get().batches;
+      const current = previous.find((b) => b.id === patch.id);
+      if (!current) return;
+      const now = new Date().toISOString();
+      const merged: SemiProductBatch = {
+        ...current,
+        ...(patch.quantitaResidua !== undefined ? { quantitaResidua: patch.quantitaResidua } : {}),
+        ...(patch.note !== undefined ? { note: patch.note } : {}),
+        ...(patch.stato !== undefined
+          ? {
+              stato: patch.stato,
+              archiviatoIl: patch.stato === 'archived' ? now : null,
+              scartatoIl: patch.stato === 'discarded' ? now : null,
+            }
+          : {}),
+      };
+      set({ batches: previous.map((b) => (b.id === patch.id ? merged : b)) });
+      try {
+        const { item } = await activeData.semi.batches.update(patch);
+        set({ batches: get().batches.map((b) => (b.id === item.id ? item : b)) });
+      } catch (err) {
+        if (isOfflineError(err)) {
+          await queueMutation('semi.batch.update', patch);
+          return;
+        }
+        set({ batches: previous });
+        throw err;
+      }
     },
     consumeBatch: async (id, consumed, opts) => {
       const { item } = await activeData.semi.batches.consume({
@@ -91,11 +161,24 @@ export const useSemiProductsStore = create<SemiProductsState>((set, get) => {
       set({ batches: get().batches.map((b) => (b.id === item.id ? item : b)) });
     },
     load: async () => {
-      const { templates, categories } = await activeData.semi.get();
-      const loadedTemplates = Array.isArray(templates)
-        ? (templates as SemiProductTemplate[]).map(t => (t.categoria ? t : { ...t, categoria: 'Non assegnato' }))
+      // La risposta è già validata e normalizzata dal layer API (schema Zod):
+      // qui restano solo le regole di presentazione — categoria di fallback per
+      // i template storici e "Non assegnato" sempre presente. In caso di errore
+      // (rete o payload non valido, già segnalato all'osservabilità) la vista
+      // parte dai valori predefiniti.
+      let templates: SemiProductTemplate[] = [];
+      let categories: string[] = [];
+      try {
+        const res = await activeData.semi.get();
+        templates = res.templates;
+        categories = res.categories;
+      } catch {
+        /* fallback ai default più sotto */
+      }
+      const loadedTemplates = templates.length > 0
+        ? templates.map(t => (t.categoria ? t : { ...t, categoria: 'Non assegnato' }))
         : DEFAULT_TEMPLATES;
-      const loadedCategories = Array.isArray(categories) ? (categories as string[]) : DEFAULT_CATEGORIES;
+      const loadedCategories = categories.length > 0 ? categories : DEFAULT_CATEGORIES;
       const nextCategories = loadedCategories.includes('Non assegnato')
         ? loadedCategories
         : ['Non assegnato', ...loadedCategories];
@@ -167,4 +250,20 @@ export const useSemiProductsStore = create<SemiProductsState>((set, get) => {
       await persist(nextTemplates, cats);
     },
   };
+});
+
+// Riconciliazione degli id: dopo la sincronizzazione di un lotto creato offline,
+// sostituisce l'id provvisorio con quello assegnato dal backend, così il consumo
+// e le modifiche successive usano l'id corretto.
+subscribeAfterFlush((kinds, idRemap) => {
+  if (!kinds.some((k) => k.startsWith('semi.batch.'))) return;
+  const { batches } = useSemiProductsStore.getState();
+  let changed = false;
+  const next = batches.map((batch) => {
+    const real = idRemap[batch.id];
+    if (!real) return batch;
+    changed = true;
+    return { ...batch, id: real };
+  });
+  if (changed) useSemiProductsStore.setState({ batches: next });
 });

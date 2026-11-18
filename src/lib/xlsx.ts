@@ -8,8 +8,10 @@
 // LibreOffice e Google Fogli.
 //
 // La libreria è pura rispetto alla rete: costruisce un Blob e non avvia download.
-
-import JSZip from 'jszip';
+// JSZip (~95 kB) viene caricato on demand: il modulo è importato anche da
+// componenti con import statico, quindi tenerlo fuori dal bundle di avvio
+// evita di scaricare la libreria finché non si esporta davvero un file.
+const loadJsZip = () => import('jszip').then((m) => m.default);
 
 /** Colonna di un foglio: intestazione e larghezza (in caratteri). */
 export interface XlsxColumn {
@@ -133,6 +135,7 @@ export async function buildXlsxBlob(sheets: XlsxSheet[]): Promise<Blob> {
   const names = list.map((sheet, i) => safeSheetName(sheet.name, i));
   const stylesRid = `rId${list.length + 1}`;
 
+  const JSZip = await loadJsZip();
   const zip = new JSZip();
   zip.file('[Content_Types].xml', contentTypesXml(list.length));
   zip.file('_rels/.rels', ROOT_RELS_XML);

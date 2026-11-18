@@ -2,8 +2,11 @@
 // Aree / zone del locale: anagrafica personalizzabile dal ristorante.
 // Le aree sono il riferimento per postazioni, controlli e calendario.
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { api, ApiError, type PestArea } from '@/lib/api';
+import { usePestList } from '@/hooks/useHaccpQueries';
+import { queryKeys } from '@/lib/queryKeys';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -20,6 +23,7 @@ interface Props {
 }
 
 const EMPTY = { name: '', description: '', color: '#0ea5e9', position: 0 };
+const EMPTY_AREAS: PestArea[] = [];
 
 /** Prossimo numero d'ordine libero (1, 2, 3…): più basso = compare prima. */
 function nextFreePosition(items: PestArea[]): number {
@@ -28,30 +32,38 @@ function nextFreePosition(items: PestArea[]): number {
 
 export function PestAreasPanel({ companyId }: Props) {
   const { confirm, confirmDialog } = useConfirm();
-  const [areas, setAreas] = useState<PestArea[]>([]);
-  const [loading, setLoading] = useState(true);
+  const queryClient = useQueryClient();
   const [saving, setSaving] = useState(false);
   const [form, setForm] = useState({ ...EMPTY });
   const [editId, setEditId] = useState<string | null>(null);
 
-  const load = async () => {
-    setLoading(true);
-    try {
-      const { items } = await api.pest.list<PestArea>(companyId, 'areas');
-      setAreas(items);
-      // Suggerisce l'ordine successivo per la nuova area (in modifica è ignorato).
-      setForm((p) => ({ ...p, position: nextFreePosition(items) }));
-    } catch (err) {
-      toast.error(err instanceof ApiError ? err.message : 'Impossibile caricare le aree');
-    } finally {
-      setLoading(false);
-    }
-  };
+  // Elenco aree via React Query: stessa cache condivisa con le altre letture del
+  // modulo (i conteggi usati altrove si aggiornano di conseguenza).
+  const areasQuery = usePestList<PestArea>(companyId, 'areas');
+  const areas = areasQuery.data ?? EMPTY_AREAS;
+  const loading = areasQuery.isPending;
 
+  // Aggiornamento ottimistico della cache dopo una scrittura riuscita.
+  const setAreas = (updater: (prev: PestArea[]) => PestArea[]) =>
+    queryClient.setQueryData<PestArea[]>(queryKeys.pest.list(companyId, 'areas'), (prev) =>
+      updater(prev ?? []),
+    );
+
+  // Alla prima lettura propone l'ordine successivo per la nuova area.
+  const seededRef = useRef(false);
   useEffect(() => {
-    void load();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [companyId]);
+    const data = areasQuery.data;
+    if (!data || seededRef.current) return;
+    seededRef.current = true;
+    setForm((p) => ({ ...p, position: nextFreePosition(data) }));
+  }, [areasQuery.data]);
+
+  // Errore di lettura: mantiene il feedback che c'era con il caricamento manuale.
+  useEffect(() => {
+    if (!areasQuery.isError) return;
+    const err = areasQuery.error;
+    toast.error(err instanceof ApiError ? err.message : 'Impossibile caricare le aree');
+  }, [areasQuery.isError, areasQuery.error]);
 
   const resetForm = () => {
     setForm({ ...EMPTY, position: nextFreePosition(areas) });

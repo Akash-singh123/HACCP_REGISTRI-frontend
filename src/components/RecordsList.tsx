@@ -1,24 +1,27 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useEffect, useRef } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
+import { useAuth } from '@/hooks/useAuth';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useConfirm } from '@/components/ConfirmDialog';
 import { Download, Calendar, FileText, Archive, Thermometer, Droplets, Trash2, Truck, ChefHat } from 'lucide-react';
-import { getRecords, generateMonthlyPDF, generateMonthlySanificationPDF, generateZipArchive, deleteAllRecords, deleteRecordsByMonth } from '@/lib/haccpUtils';
+import { generateMonthlyPDF, generateMonthlySanificationPDF, generateZipArchive, deleteAllRecords, deleteRecordsByMonth } from '@/lib/haccpUtils';
 import { HaccpRecord, CompanyInfo } from '@/types/haccp';
-import { DOC_FOLDERS, readTextFile, saveBlob } from '@/lib/docs';
+import { saveBlob } from '@/lib/docs';
 import { useIncomingFoodsStore } from '@/store/incomingFoodsStore';
+import { useLocationsStore } from '@/store/locationsStore';
+import { useRecords, useSemiRegistry } from '@/hooks/useHaccpQueries';
+import { queryKeys } from '@/lib/queryKeys';
 import {
   collectSemesters,
   generateIncomingRegistryPdf,
   generateSemiRegistryPdf,
   isInSemester,
-  parseSemiRegistry,
   semesterFileSuffix,
   semesterKey,
   semesterLabel,
-  SEMI_REGISTRY_CSV,
   type Semester,
   type SemiRegistryEntry,
 } from '@/lib/registers';
@@ -29,46 +32,52 @@ interface RecordsListProps {
   refreshTrigger?: number;
 }
 
+/** Array vuoti condivisi: identità stabile per i dati non ancora disponibili. */
+const EMPTY_RECORDS: HaccpRecord[] = [];
+const EMPTY_SEMI: SemiRegistryEntry[] = [];
+
 function RecordsList({ company, refreshTrigger = 0 }: RecordsListProps) {
-  const [records, setRecords] = useState<HaccpRecord[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [semiEntries, setSemiEntries] = useState<SemiRegistryEntry[]>([]);
-  const [semiLoading, setSemiLoading] = useState(true);
+  const queryClient = useQueryClient();
+  const { company: activeCompany } = useAuth();
   const { items: incomingItems, load: loadIncomingFoods } = useIncomingFoodsStore();
   const { confirm, confirmDialog } = useConfirm();
+  // Sede attiva: l'archivio e i PDF seguono la sede selezionata. Il cambio sede
+  // è già gestito dalla chiave delle query di React Query.
+  const activeLocationId = useLocationsStore((s) => s.activeId);
 
-  const loadRecords = useCallback(async () => {
-    try {
-      setLoading(true);
-      setRecords(await getRecords());
-    } catch (e) {
-      console.error(e);
-      toast.error('Errore nel caricamento dei registri');
-    } finally {
-      setLoading(false);
-    }
-  }, []);
+  // Registri e semilavorati via React Query: cache condivisa con gli altri
+  // moduli (Cruscotto, Manuale, Pacchetto Ispezione).
+  const recordsQuery = useRecords();
+  const records = recordsQuery.data ?? EMPTY_RECORDS;
+  const loading = recordsQuery.isPending;
 
-  const loadSemiRegistry = useCallback(async () => {
-    try {
-      setSemiLoading(true);
-      const csvText = await readTextFile(DOC_FOLDERS.semilavorati, SEMI_REGISTRY_CSV);
-      setSemiEntries(csvText ? parseSemiRegistry(csvText) : []);
-    } catch (e) {
-      console.error(e);
-      toast.error('Errore nel caricamento del registro semilavorati');
-    } finally {
-      setSemiLoading(false);
-    }
-  }, []);
+  const semiQuery = useSemiRegistry(activeCompany?.id ?? null);
+  const semiEntries = semiQuery.data ?? EMPTY_SEMI;
+  const semiLoading = semiQuery.isPending;
 
+  // Il padre segnala con `refreshTrigger` le nuove scritture: ricarichiamo
+  // entrambe le liste (saltando la prima esecuzione, i dati sono appena letti).
+  const refetchRecords = recordsQuery.refetch;
+  const refetchSemi = semiQuery.refetch;
+  const firstRefreshRef = useRef(true);
   useEffect(() => {
-    loadRecords();
-  }, [loadRecords, refreshTrigger]);
+    if (firstRefreshRef.current) {
+      firstRefreshRef.current = false;
+      return;
+    }
+    void refetchRecords();
+    void refetchSemi();
+  }, [refreshTrigger, refetchRecords, refetchSemi]);
 
+  // Errore di lettura: mantiene il feedback che c'era con il caricamento manuale.
+  const recordsError = recordsQuery.isError;
+  const semiError = semiQuery.isError;
   useEffect(() => {
-    loadSemiRegistry();
-  }, [loadSemiRegistry, refreshTrigger]);
+    if (recordsError) toast.error('Errore nel caricamento dei registri');
+  }, [recordsError]);
+  useEffect(() => {
+    if (semiError) toast.error('Errore nel caricamento del registro semilavorati');
+  }, [semiError]);
 
   useEffect(() => {
     loadIncomingFoods();
@@ -115,7 +124,7 @@ function RecordsList({ company, refreshTrigger = 0 }: RecordsListProps) {
       onConfirm: async () => {
         try {
           await deleteAllRecords();
-          setRecords([]);
+          queryClient.setQueryData<HaccpRecord[]>(queryKeys.records(activeLocationId), []);
           toast.success('Tutti i registri sono stati eliminati');
         } catch (e) {
           console.error(e);
@@ -135,7 +144,7 @@ function RecordsList({ company, refreshTrigger = 0 }: RecordsListProps) {
       onConfirm: async () => {
         try {
           await deleteRecordsByMonth(year, month);
-          await loadRecords();
+          await recordsQuery.refetch();
           toast.success(`Registri di ${monthName} eliminati`);
         } catch (e) {
           console.error(e);
@@ -186,9 +195,9 @@ function RecordsList({ company, refreshTrigger = 0 }: RecordsListProps) {
   };
 
   // Registro alimenti in ingresso: PDF cronologico, completo e aggiornato, per semestre.
-  const downloadIncomingSemesterPDF = (semester: Semester) => {
+  const downloadIncomingSemesterPDF = async (semester: Semester) => {
     try {
-      const pdf = generateIncomingRegistryPdf(incomingItems, company, semester);
+      const pdf = await generateIncomingRegistryPdf(incomingItems, company, semester);
       saveBlob(pdf.output('blob'), `Registro_Alimenti_Ingresso_${semesterFileSuffix(semester)}.pdf`);
       toast.success(`Registro Alimenti in Ingresso scaricato (${semesterLabel(semester)})`);
     } catch (e) {
@@ -198,10 +207,10 @@ function RecordsList({ company, refreshTrigger = 0 }: RecordsListProps) {
   };
 
   // Registro semilavorati: PDF per semestre.
-  const downloadSemiSemesterPDF = (semester: Semester) => {
+  const downloadSemiSemesterPDF = async (semester: Semester) => {
     try {
       const filtered = semiEntries.filter((entry) => isInSemester(entry.dataProduzione, semester));
-      const pdf = generateSemiRegistryPdf(filtered, company, semesterLabel(semester));
+      const pdf = await generateSemiRegistryPdf(filtered, company, semesterLabel(semester));
       saveBlob(pdf.output('blob'), `Registro_Semilavorati_${semesterFileSuffix(semester)}.pdf`);
       toast.success(`Registro Semilavorati scaricato (${semesterLabel(semester)})`);
     } catch (e) {

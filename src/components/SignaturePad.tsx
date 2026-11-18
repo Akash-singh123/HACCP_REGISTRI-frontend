@@ -48,6 +48,11 @@ export const SignaturePad: React.FC<SignaturePadProps> = ({
         setHasSignature(true);
       };
       img.src = initialSignature;
+    } else {
+      // Nessuna firma iniziale (es. giornata senza registro o firma azzerata):
+      // il riquadro è già stato pulito sopra, ma lo stato va riallineato,
+      // altrimenti i pulsanti "Cancella/Salva" restano attivi su un canvas vuoto.
+      setHasSignature(false);
     }
   }, [width, height, initialSignature]);
 

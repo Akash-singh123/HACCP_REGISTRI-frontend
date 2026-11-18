@@ -4,9 +4,16 @@
 // Ogni registro è suddiviso in semestri (gen-giu / lug-dic) per non produrre
 // file troppo pesanti con il passare del tempo.
 
-import jsPDF from 'jspdf';
+// jsPDF (~330 kB) serve solo alla generazione dei PDF dei registri: questo
+// modulo è importato anche dalla shell del gestionale (parsing del CSV
+// semilavorati), quindi la libreria viene caricata on demand alla prima
+// esportazione per non finire nel bundle di avvio.
+import type { jsPDF } from 'jspdf';
 import type { CompanyInfo } from '@/types/haccp';
 import type { IncomingFood } from '@/store/incomingFoodsStore';
+
+/** Caricatore on demand di jsPDF (la promessa è memorizzata dal bundler). */
+const loadJsPdf = () => import('jspdf').then((m) => m.jsPDF);
 
 /** Nomi dei file del registro semilavorati nello spazio dell'azienda. */
 export const SEMI_REGISTRY_CSV = 'Registro_Semilavorati.csv';
@@ -169,14 +176,14 @@ const INCOMING_COLUMNS: { label: string; width: number }[] = [
  * nero, celle bianche con bordo grigio. Evita i riempimenti pieni che in alcuni
  * visualizzatori/anteprime rendevano le caselle scure e illeggibili.
  */
-export function generateIncomingRegistryPdf(
+export async function generateIncomingRegistryPdf(
   items: IncomingFood[],
   company: CompanyInfo,
   semester: Semester
-): jsPDF {
-  const pdf = new jsPDF('landscape', 'mm', 'a4');
+): Promise<jsPDF> {
+  const JsPDF = await loadJsPdf();
+  const pdf = new JsPDF('landscape', 'mm', 'a4');
   const startX = 12;
-  const pageWidth = pdf.internal.pageSize.getWidth();
   const pageHeight = pdf.internal.pageSize.getHeight();
   const tableWidth = INCOMING_COLUMNS.reduce((sum, col) => sum + col.width, 0);
   const cellHeight = 8;
@@ -278,12 +285,13 @@ export function generateIncomingRegistryPdf(
  * Registro dei prodotti semilavorati: per ogni registrazione riporta i dati
  * del prodotto e i lotti degli ingredienti utilizzati.
  */
-export function generateSemiRegistryPdf(
+export async function generateSemiRegistryPdf(
   entries: SemiRegistryEntry[],
   company: CompanyInfo,
   periodLabel: string
-): jsPDF {
-  const doc = new jsPDF('portrait', 'mm', 'a4');
+): Promise<jsPDF> {
+  const JsPDF = await loadJsPdf();
+  const doc = new JsPDF('portrait', 'mm', 'a4');
   const margin = 15;
   const pageWidth = doc.internal.pageSize.getWidth();
   const pageHeight = doc.internal.pageSize.getHeight();

@@ -8,9 +8,22 @@ export interface Equipment {
   position: number;
 }
 
+/** Esito di una voce del piano di sanificazione nella checklist di una giornata. */
+export interface CleaningCheck {
+  itemId: string;
+  area: string;
+  activity: string;
+  done: boolean;
+}
+
 export interface HaccpRecord {
     id: string;
     date: string; // YYYY-MM-DD format
+    /**
+     * Sede a cui appartiene il registro. Con più sedi l'identità del registro
+     * giornaliero è (sede, data); le aziende a sede unica usano la predefinita.
+     */
+    locationId?: string;
     /**
      * Mappa dinamica delle temperature rilevate: chiave = id attrezzatura,
      * valore = temperatura in °C. I registri storici usano le chiavi
@@ -31,6 +44,11 @@ export interface HaccpRecord {
       wasteContainers: boolean;
       ovens: boolean;
     };
+    /**
+     * Esito della checklist guidata del piano di sanificazione (opzionale:
+     * assente nei registri storici, che restano leggibili).
+     */
+    cleaningPlan?: CleaningCheck[];
     notes?: string;
     signature?: string; // base64 image
     createdAt: string;

@@ -21,6 +21,11 @@ const MESSAGES = {
     description:
       'La licenza di questa azienda non è attiva. L\'accesso al gestionale è bloccato fino alla riattivazione.',
   },
+  suspended: {
+    title: 'Licenza sospesa',
+    description:
+      'La licenza di questa azienda è stata sospesa. L\'accesso al gestionale resta bloccato finché la sospensione non viene revocata.',
+  },
   missing: {
     title: 'Nessuna licenza associata',
     description:

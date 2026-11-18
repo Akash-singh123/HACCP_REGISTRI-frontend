@@ -2,8 +2,11 @@
 // Archivio dei prodotti utilizzati (specifica §11): nome, produttore, scadenza,
 // documentazione. I prodotti scaduti non sono selezionabili negli interventi.
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { api, ApiError, type PestProduct } from '@/lib/api';
+import { usePestList } from '@/hooks/useHaccpQueries';
+import { queryKeys } from '@/lib/queryKeys';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -19,28 +22,31 @@ interface Props {
   companyId: string;
 }
 
+const EMPTY_PRODUCTS: PestProduct[] = [];
+
 export function PestProductsPanel({ companyId }: Props) {
   const { confirm, confirmDialog } = useConfirm();
-  const [products, setProducts] = useState<PestProduct[]>([]);
-  const [loading, setLoading] = useState(true);
+  const queryClient = useQueryClient();
   const [formOpen, setFormOpen] = useState(false);
   const [editItem, setEditItem] = useState<PestProduct | null>(null);
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    try {
-      const { items } = await api.pest.list<PestProduct>(companyId, 'products');
-      setProducts(items);
-    } catch (err) {
-      toast.error(err instanceof ApiError ? err.message : 'Impossibile caricare i prodotti');
-    } finally {
-      setLoading(false);
-    }
-  }, [companyId]);
+  // Elenco prodotti via React Query: stessa cache condivisa del modulo.
+  const productsQuery = usePestList<PestProduct>(companyId, 'products');
+  const products = productsQuery.data ?? EMPTY_PRODUCTS;
+  const loading = productsQuery.isPending;
 
+  // Aggiornamento ottimistico della cache dopo una scrittura riuscita.
+  const setProducts = (updater: (prev: PestProduct[]) => PestProduct[]) =>
+    queryClient.setQueryData<PestProduct[]>(queryKeys.pest.list(companyId, 'products'), (prev) =>
+      updater(prev ?? []),
+    );
+
+  // Errore di lettura: mantiene il feedback che c'era con il caricamento manuale.
   useEffect(() => {
-    void load();
-  }, [load]);
+    if (!productsQuery.isError) return;
+    const err = productsQuery.error;
+    toast.error(err instanceof ApiError ? err.message : 'Impossibile caricare i prodotti');
+  }, [productsQuery.isError, productsQuery.error]);
 
   const expiredCount = useMemo(() => products.filter((p) => productExpiryMeta(p.expiry_date).expired).length, [products]);
 
@@ -102,8 +108,8 @@ export function PestProductsPanel({ companyId }: Props) {
               </div>
             </div>
             <div className="flex flex-wrap gap-2">
-              <Button variant="ghost" size="icon" className="h-11 w-11 sm:h-10 sm:w-10" onClick={() => void load()} title="Aggiorna">
-                {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+              <Button variant="ghost" size="icon" className="h-11 w-11 sm:h-10 sm:w-10" onClick={() => void productsQuery.refetch()} title="Aggiorna">
+                {productsQuery.isFetching ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
               </Button>
               <Button onClick={openCreate}>
                 <Plus className="mr-2 h-4 w-4" /> Nuovo prodotto

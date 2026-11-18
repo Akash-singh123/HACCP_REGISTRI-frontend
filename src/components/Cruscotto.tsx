@@ -8,7 +8,7 @@
 // registri: nessun indicatore viene calcolato lato server solo per questa
 // pagina. Da qui si esportano il rapporto PDF e il foglio Excel per l'ispezione.
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -29,13 +29,6 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import {
-  ChartContainer,
-  ChartTooltip,
-  ChartTooltipContent,
-  type ChartConfig,
-} from '@/components/ui/chart';
-import { Bar, BarChart, CartesianGrid, XAxis, YAxis } from 'recharts';
-import {
   AlertTriangle,
   Bug,
   CalendarX2,
@@ -49,20 +42,24 @@ import {
   RefreshCw,
   ShieldAlert,
   Thermometer,
-  TrendingUp,
   type LucideIcon,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import {
-  activeData,
-  api,
-  type AlertListResult,
   type IncomingFoodRow,
   type PestAnomaly,
   type PestAuditEntry,
   type PestCorrectiveAction,
 } from '@/lib/api';
-import { getEquipment, getRecords } from '@/lib/haccpUtils';
+import {
+  useAlerts,
+  useEquipment,
+  useIncomingFoods,
+  usePestAnomalies,
+  usePestAudit,
+  usePestCorrectiveActions,
+  useRecords,
+} from '@/hooks/useHaccpQueries';
 import type { CompanyInfo, Equipment, HaccpRecord } from '@/types/haccp';
 import {
   ALERT_CATEGORY_TABS,
@@ -91,20 +88,17 @@ import {
 import { saveBlob } from '@/lib/docs';
 import { cn } from '@/lib/utils';
 
+// I grafici (recharts, ~260 kB tra libreria e dipendenze) sono caricati on
+// demand: il resto del cruscotto — KPI, tabelle e avvisi — si renderizza subito.
+const TrendCharts = lazy(() =>
+  import('./cruscotto/TrendCharts').then((m) => ({ default: m.TrendCharts })),
+);
+
 const PERIOD_OPTIONS = [
   { value: '7', label: 'Ultimi 7 giorni' },
   { value: '30', label: 'Ultimi 30 giorni' },
   { value: '90', label: 'Ultimi 90 giorni' },
 ] as const;
-
-const OUT_OF_RANGE_CONFIG: ChartConfig = {
-  count: { label: 'Fuori range', color: 'hsl(0 72% 51%)' },
-};
-
-const COMPLETENESS_CONFIG: ChartConfig = {
-  compiled: { label: 'Registri compilati', color: 'hsl(152 60% 40%)' },
-  missing: { label: 'Registri mancanti', color: 'hsl(0 72% 51%)' },
-};
 
 const BAND_TONE: Record<ComplianceBand, { badge: string; text: string; bar: string }> = {
   conforme: { badge: 'border-success/30 bg-success/10 text-success', text: 'text-success', bar: 'bg-success' },
@@ -112,14 +106,14 @@ const BAND_TONE: Record<ComplianceBand, { badge: string; text: string; bar: stri
   critico: { badge: 'border-destructive/30 bg-destructive/10 text-destructive', text: 'text-destructive', bar: 'bg-destructive' },
 };
 
-function settledValue<T>(result: PromiseSettledResult<unknown>, fallback: T): T {
-  return result.status === 'fulfilled' ? (result.value as T) : fallback;
-}
-
-function fmtDay(iso: string): string {
-  const [y, m, d] = iso.split('-');
-  return `${d}/${m}`;
-}
+// Array vuoti condivisi: mantengono stabile l'identità dei dati assenti, così
+// le memoizzazioni a valle non si invalidano a ogni render.
+const EMPTY_RECORDS: HaccpRecord[] = [];
+const EMPTY_EQUIPMENT: Equipment[] = [];
+const EMPTY_INCOMING: IncomingFoodRow[] = [];
+const EMPTY_ANOMALIES: PestAnomaly[] = [];
+const EMPTY_ACTIONS: PestCorrectiveAction[] = [];
+const EMPTY_AUDIT: PestAuditEntry[] = [];
 
 function fmtDate(value: string | null | undefined): string {
   if (!value) return '—';
@@ -160,57 +154,66 @@ export default function Cruscotto({
   onNavigate,
 }: CruscottoProps) {
   const [periodDays, setPeriodDays] = useState<number>(30);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [records, setRecords] = useState<HaccpRecord[]>([]);
-  const [equipment, setEquipment] = useState<Equipment[]>([]);
-  const [incoming, setIncoming] = useState<IncomingFoodRow[]>([]);
-  const [alerts, setAlerts] = useState<AlertListResult | null>(null);
-  const [anomalies, setAnomalies] = useState<PestAnomaly[]>([]);
-  const [actions, setActions] = useState<PestCorrectiveAction[]>([]);
-  const [audit, setAudit] = useState<PestAuditEntry[]>([]);
   const [logoDataUrl, setLogoDataUrl] = useState<string | null>(null);
   const [showResolved, setShowResolved] = useState(false);
   const [exporting, setExporting] = useState<'pdf' | 'xlsx' | null>(null);
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    const settled = await Promise.allSettled([
-      getRecords(),
-      getEquipment(),
-      activeData.incoming.list(),
-      companyId ? api.alerts.list(companyId) : Promise.resolve(null),
-      companyId
-        ? api.pest.list<PestAnomaly>(companyId, 'anomalies')
-        : Promise.resolve({ items: [] as PestAnomaly[] }),
-      companyId
-        ? api.pest.list<PestCorrectiveAction>(companyId, 'correctiveActions')
-        : Promise.resolve({ items: [] as PestCorrectiveAction[] }),
-      companyId
-        ? api.pest.audit(companyId, 50)
-        : Promise.resolve({ items: [] as PestAuditEntry[] }),
+  // Letture via React Query: cache condivisa con gli altri moduli e chiavi per
+  // sede attiva. Lo skeleton copre il primo caricamento dei dati operativi.
+  const recordsQuery = useRecords();
+  const equipmentQuery = useEquipment();
+  const incomingQuery = useIncomingFoods();
+  const alertsQuery = useAlerts(companyId);
+  const anomaliesQuery = usePestAnomalies(companyId);
+  const actionsQuery = usePestCorrectiveActions(companyId);
+  const auditQuery = usePestAudit(companyId, 50);
+
+  const records = recordsQuery.data ?? EMPTY_RECORDS;
+  const equipment = equipmentQuery.data ?? EMPTY_EQUIPMENT;
+  const incoming = incomingQuery.data ?? EMPTY_INCOMING;
+  const alerts = alertsQuery.data ?? null;
+  const anomalies = anomaliesQuery.data ?? EMPTY_ANOMALIES;
+  const actions = actionsQuery.data ?? EMPTY_ACTIONS;
+  const audit = auditQuery.data ?? EMPTY_AUDIT;
+
+  const loading = recordsQuery.isPending || equipmentQuery.isPending || incomingQuery.isPending;
+  const error =
+    recordsQuery.isError && incomingQuery.isError
+      ? 'Impossibile caricare i dati del cruscotto.'
+      : null;
+
+  const { refetch: refetchRecords } = recordsQuery;
+  const { refetch: refetchEquipment } = equipmentQuery;
+  const { refetch: refetchIncoming } = incomingQuery;
+  const { refetch: refetchAlerts } = alertsQuery;
+  const { refetch: refetchAnomalies } = anomaliesQuery;
+  const { refetch: refetchActions } = actionsQuery;
+  const { refetch: refetchAudit } = auditQuery;
+
+  const refresh = useCallback(() => {
+    void Promise.all([
+      refetchRecords(),
+      refetchEquipment(),
+      refetchIncoming(),
+      refetchAlerts(),
+      refetchAnomalies(),
+      refetchActions(),
+      refetchAudit(),
     ]);
+  }, [
+    refetchRecords,
+    refetchEquipment,
+    refetchIncoming,
+    refetchAlerts,
+    refetchAnomalies,
+    refetchActions,
+    refetchAudit,
+  ]);
 
-    setRecords(settledValue<HaccpRecord[]>(settled[0], []));
-    setEquipment(settledValue<Equipment[]>(settled[1], []));
-    setIncoming(settledValue<{ items: IncomingFoodRow[] }>(settled[2], { items: [] }).items ?? []);
-    setAlerts(settledValue<AlertListResult | null>(settled[3], null));
-    setAnomalies(settledValue<{ items: PestAnomaly[] }>(settled[4], { items: [] }).items ?? []);
-    setActions(
-      settledValue<{ items: PestCorrectiveAction[] }>(settled[5], { items: [] }).items ?? []
-    );
-    setAudit(settledValue<{ items: PestAuditEntry[] }>(settled[6], { items: [] }).items ?? []);
-
-    if (settled[0].status === 'rejected' && settled[2].status === 'rejected') {
-      setError('Impossibile caricare i dati del cruscotto.');
-    }
-    setLoading(false);
-  }, [companyId]);
-
+  // Ricarica esplicita richiesta dall'esterno (es. dopo il salvataggio di un registro).
   useEffect(() => {
-    void load();
-  }, [load, refreshTrigger]);
+    if (refreshTrigger > 0) refresh();
+  }, [refreshTrigger, refresh]);
 
   // Logo aziendale in dataURL, solo se disponibile (best effort per il PDF).
   useEffect(() => {
@@ -309,7 +312,7 @@ export default function Cruscotto({
   const exportPdf = async () => {
     setExporting('pdf');
     try {
-      const pdf = buildCompliancePdf(buildReportData());
+      const pdf = await buildCompliancePdf(buildReportData());
       pdf.save(complianceReportFilename(range, 'pdf'));
       toast.success('Rapporto PDF generato');
     } catch (e) {
@@ -381,7 +384,7 @@ export default function Cruscotto({
           <span className="hidden text-xs text-muted-foreground sm:inline">{periodLabel}</span>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <Button variant="outline" size="sm" onClick={() => void load()} disabled={loading}>
+          <Button variant="outline" size="sm" onClick={refresh} disabled={loading}>
             <RefreshCw className="h-4 w-4" />
             Aggiorna
           </Button>
@@ -484,55 +487,13 @@ export default function Cruscotto({
         />
       </div>
 
-      {/* Trend */}
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-        <Card className="rounded-2xl border-border/70 shadow-card">
-          <CardHeader className="pb-2">
-            <CardTitle className="flex items-center gap-2 text-base">
-              <Thermometer className="h-4 w-4 text-destructive" />
-              Temperature fuori range nel tempo
-            </CardTitle>
-            <CardDescription>Numero di rilevazioni oltre i limiti, giorno per giorno.</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <ChartContainer config={OUT_OF_RANGE_CONFIG} className="aspect-auto h-[220px] w-full">
-              <BarChart data={model.outOfRangeTrend} margin={{ left: -20, right: 8, top: 8 }}>
-                <CartesianGrid vertical={false} />
-                <XAxis dataKey="date" tickFormatter={fmtDay} tickLine={false} axisLine={false} minTickGap={24} />
-                <YAxis allowDecimals={false} tickLine={false} axisLine={false} width={28} />
-                <ChartTooltip content={<ChartTooltipContent labelFormatter={(v) => fmtDate(String(v))} />} />
-                <Bar dataKey="count" fill="var(--color-count)" radius={[4, 4, 0, 0]} />
-              </BarChart>
-            </ChartContainer>
-          </CardContent>
-        </Card>
-
-        <Card className="rounded-2xl border-border/70 shadow-card">
-          <CardHeader className="pb-2">
-            <CardTitle className="flex items-center gap-2 text-base">
-              <TrendingUp className="h-4 w-4 text-success" />
-              Completezza dei registri
-            </CardTitle>
-            <CardDescription>Registri compilati rispetto ai giorni mancanti.</CardDescription>
-          </CardHeader>
-          <CardContent>
-            {model.completenessTrend.length === 0 ? (
-              <EmptyChart message="Nessun registro disponibile per il periodo." />
-            ) : (
-              <ChartContainer config={COMPLETENESS_CONFIG} className="aspect-auto h-[220px] w-full">
-                <BarChart data={model.completenessTrend} margin={{ left: -20, right: 8, top: 8 }}>
-                  <CartesianGrid vertical={false} />
-                  <XAxis dataKey="date" tickFormatter={fmtDay} tickLine={false} axisLine={false} minTickGap={24} />
-                  <YAxis allowDecimals={false} tickLine={false} axisLine={false} width={28} />
-                  <ChartTooltip content={<ChartTooltipContent labelFormatter={(v) => fmtDate(String(v))} />} />
-                  <Bar dataKey="compiled" stackId="a" fill="var(--color-compiled)" radius={[0, 0, 0, 0]} />
-                  <Bar dataKey="missing" stackId="a" fill="var(--color-missing)" radius={[4, 4, 0, 0]} />
-                </BarChart>
-              </ChartContainer>
-            )}
-          </CardContent>
-        </Card>
-      </div>
+      {/* Trend (grafici caricati on demand) */}
+      <Suspense fallback={<TrendChartsFallback />}>
+        <TrendCharts
+          outOfRangeTrend={model.outOfRangeTrend}
+          completenessTrend={model.completenessTrend}
+        />
+      </Suspense>
 
       {/* Avvisi per categoria */}
       <Card className="rounded-2xl border-border/70 shadow-card">
@@ -718,9 +679,22 @@ export default function Cruscotto({
   );
 }
 
-function EmptyChart({ message }: { message: string }) {
+/** Skeleton dei grafici visualizzato mentre recharts viene caricato on demand. */
+function TrendChartsFallback() {
   return (
-    <div className="flex h-[220px] items-center justify-center text-sm text-muted-foreground">{message}</div>
+    <div className="grid grid-cols-1 gap-4 lg:grid-cols-2" aria-hidden="true">
+      {[0, 1].map((i) => (
+        <Card key={i} className="rounded-2xl border-border/70 shadow-card">
+          <CardHeader className="pb-2">
+            <Skeleton className="h-5 w-56" />
+            <Skeleton className="h-4 w-72" />
+          </CardHeader>
+          <CardContent>
+            <Skeleton className="h-[220px] w-full rounded-xl" />
+          </CardContent>
+        </Card>
+      ))}
+    </div>
   );
 }
 

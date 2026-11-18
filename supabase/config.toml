@@ -20,6 +20,11 @@ verify_jwt = true
 [functions.admin-clients]
 verify_jwt = true
 
+# Gestione utenti/inviti lato azienda. Richiede sempre un JWT utente (anche
+# l'accettazione di un invito, che avviene prima del controllo di appartenenza).
+[functions.team]
+verify_jwt = true
+
 [functions.pest-control]
 verify_jwt = true
 

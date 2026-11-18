@@ -2,8 +2,11 @@
 // Rubrica delle ditte esterne (specifica §12) con i servizi offerti, il
 // contratto e il collegamento alle informazioni di contatto.
 
-import { useCallback, useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { api, ApiError, type PestExternalCompany } from '@/lib/api';
+import { usePestList } from '@/hooks/useHaccpQueries';
+import { queryKeys } from '@/lib/queryKeys';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -17,28 +20,31 @@ interface Props {
   companyId: string;
 }
 
+const EMPTY_COMPANIES: PestExternalCompany[] = [];
+
 export function PestExternalCompaniesPanel({ companyId }: Props) {
   const { confirm, confirmDialog } = useConfirm();
-  const [companies, setCompanies] = useState<PestExternalCompany[]>([]);
-  const [loading, setLoading] = useState(true);
+  const queryClient = useQueryClient();
   const [formOpen, setFormOpen] = useState(false);
   const [editItem, setEditItem] = useState<PestExternalCompany | null>(null);
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    try {
-      const { items } = await api.pest.list<PestExternalCompany>(companyId, 'externalCompanies');
-      setCompanies(items);
-    } catch (err) {
-      toast.error(err instanceof ApiError ? err.message : 'Impossibile caricare le ditte esterne');
-    } finally {
-      setLoading(false);
-    }
-  }, [companyId]);
+  // Elenco ditte esterne via React Query: stessa cache condivisa del modulo.
+  const companiesQuery = usePestList<PestExternalCompany>(companyId, 'externalCompanies');
+  const companies = companiesQuery.data ?? EMPTY_COMPANIES;
+  const loading = companiesQuery.isPending;
 
+  // Aggiornamento ottimistico della cache dopo una scrittura riuscita.
+  const setCompanies = (updater: (prev: PestExternalCompany[]) => PestExternalCompany[]) =>
+    queryClient.setQueryData<PestExternalCompany[]>(queryKeys.pest.list(companyId, 'externalCompanies'), (prev) =>
+      updater(prev ?? []),
+    );
+
+  // Errore di lettura: mantiene il feedback che c'era con il caricamento manuale.
   useEffect(() => {
-    void load();
-  }, [load]);
+    if (!companiesQuery.isError) return;
+    const err = companiesQuery.error;
+    toast.error(err instanceof ApiError ? err.message : 'Impossibile caricare le ditte esterne');
+  }, [companiesQuery.isError, companiesQuery.error]);
 
   const openCreate = () => {
     setEditItem(null);
@@ -91,8 +97,8 @@ export function PestExternalCompaniesPanel({ companyId }: Props) {
               </div>
             </div>
             <div className="flex flex-wrap gap-2">
-              <Button variant="ghost" size="icon" className="h-11 w-11 sm:h-10 sm:w-10" onClick={() => void load()} title="Aggiorna">
-                {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+              <Button variant="ghost" size="icon" className="h-11 w-11 sm:h-10 sm:w-10" onClick={() => void companiesQuery.refetch()} title="Aggiorna">
+                {companiesQuery.isFetching ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
               </Button>
               <Button onClick={openCreate}>
                 <Plus className="mr-2 h-4 w-4" /> Nuova ditta

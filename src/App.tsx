@@ -1,7 +1,8 @@
 import { lazy, Suspense } from 'react';
 import { Toaster } from '@/components/ui/sonner';
 import { TooltipProvider } from '@/components/ui/tooltip';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { QueryClientProvider } from '@tanstack/react-query';
+import { queryClient } from '@/lib/queryClient';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from '@/hooks/useAuth';
 import { Loader2 } from 'lucide-react';
@@ -17,14 +18,13 @@ const AllergeniPubblico = lazy(() => import('./pages/AllergeniPubblico'));
 const Login = lazy(() => import('./pages/Login'));
 const Registrati = lazy(() => import('./pages/Registrati'));
 const Attiva = lazy(() => import('./pages/Attiva'));
+const Invito = lazy(() => import('./pages/Invito'));
 const Homepage = lazy(() => import('./pages/Home'));
 const Funzionalita = lazy(() => import('./pages/Funzionalita'));
 const Prezzi = lazy(() => import('./pages/Prezzi'));
 const AdminClienti = lazy(() => import('./pages/AdminClienti'));
 const AdminOsservabilita = lazy(() => import('./pages/AdminOsservabilita'));
 const LicenseBlocked = lazy(() => import('./components/LicenseBlocked'));
-
-const queryClient = new QueryClient();
 
 function FullScreenLoader() {
   return (
@@ -93,6 +93,7 @@ const App = () => (
               <Route path="/login" element={<Login />} />
               <Route path="/registrati" element={<Registrati />} />
               <Route path="/attiva" element={<Attiva />} />
+              <Route path="/invito" element={<Invito />} />
               <Route path="/funzionalita" element={<Funzionalita />} />
               <Route path="/prezzi" element={<Prezzi />} />
               <Route path="/allergeni" element={<AllergeniPubblico />} />

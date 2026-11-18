@@ -2,7 +2,8 @@
 // Registro degli interventi di disinfestazione (§8) o derattizzazione (§9).
 // Ogni intervento collega postazioni e prodotti reali del piano di monitoraggio.
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import {
   api,
   ApiError,
@@ -13,6 +14,8 @@ import {
   type PestProduct,
   type PestStation,
 } from '@/lib/api';
+import { usePestList } from '@/hooks/useHaccpQueries';
+import { queryKeys } from '@/lib/queryKeys';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -29,43 +32,82 @@ interface Props {
   kind: PestInterventionKind;
 }
 
+// Array vuoti con identità stabile a livello di modulo.
+const EMPTY_INTERVENTIONS: PestIntervention[] = [];
+const EMPTY_AREAS: PestArea[] = [];
+const EMPTY_STATIONS: PestStation[] = [];
+const EMPTY_COMPANIES: PestExternalCompany[] = [];
+const EMPTY_PRODUCTS: PestProduct[] = [];
+
 export function PestInterventionsPanel({ companyId, kind }: Props) {
   const { confirm, confirmDialog } = useConfirm();
-  const [interventions, setInterventions] = useState<PestIntervention[]>([]);
-  const [areas, setAreas] = useState<PestArea[]>([]);
-  const [stations, setStations] = useState<PestStation[]>([]);
-  const [companies, setCompanies] = useState<PestExternalCompany[]>([]);
-  const [products, setProducts] = useState<PestProduct[]>([]);
-  const [loading, setLoading] = useState(true);
-
+  const queryClient = useQueryClient();
   const [formOpen, setFormOpen] = useState(false);
   const [editItem, setEditItem] = useState<PestIntervention | null>(null);
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    try {
-      const [ivRes, arRes, stRes, coRes, prRes] = await Promise.all([
-        api.pest.list<PestIntervention>(companyId, 'interventions'),
-        api.pest.list<PestArea>(companyId, 'areas'),
-        api.pest.list<PestStation>(companyId, 'stations'),
-        api.pest.list<PestExternalCompany>(companyId, 'externalCompanies'),
-        api.pest.list<PestProduct>(companyId, 'products'),
-      ]);
-      setInterventions(ivRes.items);
-      setAreas(arRes.items);
-      setStations(stRes.items);
-      setCompanies(coRes.items);
-      setProducts(prRes.items);
-    } catch (err) {
-      toast.error(err instanceof ApiError ? err.message : 'Impossibile caricare gli interventi');
-    } finally {
-      setLoading(false);
-    }
-  }, [companyId]);
+  // Letture del modulo via React Query: stessa cache condivisa con gli altri pannelli.
+  const interventionsQuery = usePestList<PestIntervention>(companyId, 'interventions');
+  const areasQuery = usePestList<PestArea>(companyId, 'areas');
+  const stationsQuery = usePestList<PestStation>(companyId, 'stations');
+  const companiesQuery = usePestList<PestExternalCompany>(companyId, 'externalCompanies');
+  const productsQuery = usePestList<PestProduct>(companyId, 'products');
 
+  const interventions = interventionsQuery.data ?? EMPTY_INTERVENTIONS;
+  const areas = areasQuery.data ?? EMPTY_AREAS;
+  const stations = stationsQuery.data ?? EMPTY_STATIONS;
+  const companies = companiesQuery.data ?? EMPTY_COMPANIES;
+  const products = productsQuery.data ?? EMPTY_PRODUCTS;
+
+  // Skeleton finché i dati iniziali non sono pronti (stessa semantica del load manuale).
+  const loading =
+    interventionsQuery.isPending ||
+    areasQuery.isPending ||
+    stationsQuery.isPending ||
+    companiesQuery.isPending ||
+    productsQuery.isPending;
+  const refreshing =
+    interventionsQuery.isFetching ||
+    areasQuery.isFetching ||
+    stationsQuery.isFetching ||
+    companiesQuery.isFetching ||
+    productsQuery.isFetching;
+
+  // Aggiornamento ottimistico della cache dopo una scrittura riuscita.
+  const setInterventions = (updater: (prev: PestIntervention[]) => PestIntervention[]) =>
+    queryClient.setQueryData<PestIntervention[]>(queryKeys.pest.list(companyId, 'interventions'), (prev) =>
+      updater(prev ?? []),
+    );
+
+  // Errore di lettura: mantiene il feedback che c'era con il caricamento manuale.
   useEffect(() => {
-    void load();
-  }, [load]);
+    if (
+      !interventionsQuery.isError &&
+      !areasQuery.isError &&
+      !stationsQuery.isError &&
+      !companiesQuery.isError &&
+      !productsQuery.isError
+    ) {
+      return;
+    }
+    const err =
+      interventionsQuery.error ??
+      areasQuery.error ??
+      stationsQuery.error ??
+      companiesQuery.error ??
+      productsQuery.error;
+    toast.error(err instanceof ApiError ? err.message : 'Impossibile caricare gli interventi');
+  }, [
+    interventionsQuery.isError,
+    interventionsQuery.error,
+    areasQuery.isError,
+    areasQuery.error,
+    stationsQuery.isError,
+    stationsQuery.error,
+    companiesQuery.isError,
+    companiesQuery.error,
+    productsQuery.isError,
+    productsQuery.error,
+  ]);
 
   const meta = interventionKindMeta(kind);
   const rows = useMemo(() => interventions.filter((i) => i.kind === kind), [interventions, kind]);
@@ -132,8 +174,22 @@ export function PestInterventionsPanel({ companyId, kind }: Props) {
               </div>
             </div>
             <div className="flex flex-wrap gap-2">
-              <Button variant="ghost" size="icon" className="h-11 w-11 sm:h-10 sm:w-10" onClick={() => void load()} title="Aggiorna">
-                {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-11 w-11 sm:h-10 sm:w-10"
+                onClick={() =>
+                  void Promise.all([
+                    interventionsQuery.refetch(),
+                    areasQuery.refetch(),
+                    stationsQuery.refetch(),
+                    companiesQuery.refetch(),
+                    productsQuery.refetch(),
+                  ])
+                }
+                title="Aggiorna"
+              >
+                {refreshing ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
               </Button>
               <Button onClick={openCreate}>
                 <Plus className="mr-2 h-4 w-4" /> Nuovo intervento

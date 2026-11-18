@@ -1,13 +1,21 @@
-import { HaccpRecord, CompanyInfo, Equipment, EquipmentKind } from '@/types/haccp';
-// jspdf/jszip con import statico, come negli altri moduli che generano PDF
-// (registers, pestReports, Allergeni, Semilavorati): nessuno specificatore
-// dinamico, quindi nessun rischio di chunk mancante o di "module specifier"
-// non risolto. Rollup colloca comunque le librerie in un chunk separato.
-import jsPDF from 'jspdf';
-import JSZip from 'jszip';
+import { HaccpRecord, CompanyInfo, Equipment, EquipmentKind, CleaningCheck } from '@/types/haccp';
+// jspdf e jszip (~430 kB in due) servono solo alla generazione di PDF/ZIP.
+// Questo modulo è importato anche dalla shell del gestionale (lettura dei
+// registri), quindi un import statico trascinerebbe le due librerie nell'avvio
+// dell'app: vengono caricate on demand alla prima esportazione (il tipo,
+// invece, è disponibile subito perché è cancellato in compilazione).
+import type { jsPDF } from 'jspdf';
 import { getOsaSignature, addSignatureToPdf } from './osaSignature';
-import { activeData, ApiError, getActiveCompany, type RecordUpsertPayload } from './api';
+import { activeData, ApiError, getActiveCompany, getActiveLocation, type CleaningFrequency, type RecordUpsertPayload } from './api';
 import { enqueueRecord, getPendingRecords, removePendingRecord, clearPendingRecords, type PendingRecord } from './offlineQueue';
+
+/**
+ * Caricatori on demand delle librerie di esportazione: la promessa del import
+ * dinamico è memorizzata dal bundler, quindi il chunk viene scaricato una volta
+ * sola e riusato per le esportazioni successive.
+ */
+const loadJsPdf = () => import('jspdf').then((m) => m.jsPDF);
+const loadJsZip = () => import('jszip').then((m) => m.default);
 
 /** Range HACCP di riferimento per tipologia di attrezzatura. */
 export const EQUIPMENT_RANGES: Record<
@@ -71,6 +79,94 @@ export const generateDefaultCleaning = () => ({
   ovens: Math.random() > 0.1,
 });
 
+/**
+ * Stato iniziale della checklist di sanificazione: tutte le aree da verificare.
+ */
+export const DEFAULT_CLEANING: HaccpRecord['cleaning'] = {
+  equipment: true,
+  surfaces: true,
+  utensils: true,
+  floors: true,
+  refrigerators: true,
+  walls: true,
+  lighting: true,
+  doors: true,
+  shelves: true,
+  toilets: true,
+  wasteContainers: true,
+  ovens: true,
+};
+
+/** Esiti della checklist del piano di sanificazione → mappa id voce → completata. */
+export const cleaningChecksToMap = (checks: CleaningCheck[]): Record<string, boolean> =>
+  checks.reduce<Record<string, boolean>>((acc, c) => {
+    acc[c.itemId] = c.done;
+    return acc;
+  }, {});
+
+/** Stato del modulo registro giornaliero, derivato dal registro della data scelta. */
+export interface RecordFormState {
+  temperatures: Record<string, number>;
+  cleaning: HaccpRecord['cleaning'];
+  notes: string;
+  signature: string;
+  planChecks: Record<string, boolean>;
+}
+
+/**
+ * Deriva lo stato del modulo dal registro esistente. Se per la data non esiste
+ * un registro la giornata riparte da un modulo vuoto: senza questo azzeramento
+ * firma OSA, note, temperature e sanificazioni resterebbero quelli del giorno
+ * precedente, con il rischio di salvare la giornata firmata con i dati di un'altra.
+ */
+export const formStateFromRecord = (record: HaccpRecord | undefined): RecordFormState => {
+  if (!record) {
+    return {
+      temperatures: {},
+      cleaning: DEFAULT_CLEANING,
+      notes: '',
+      signature: '',
+      planChecks: {},
+    };
+  }
+  return {
+    temperatures: record.temperatures ?? {},
+    cleaning: record.cleaning,
+    notes: record.notes || '',
+    signature: record.signature || '',
+    planChecks: record.cleaningPlan ? cleaningChecksToMap(record.cleaningPlan) : {},
+  };
+};
+
+/**
+ * Stabilisce se un'attività del piano di sanificazione è prevista in una data,
+ * in base alla sua frequenza. Guida la checklist giornaliera: le attività non
+ * previste per il giorno selezionato restano fuori dalla compilazione.
+ *   - giornaliera: ogni giorno
+ *   - settimanale: il lunedì
+ *   - quindicinale: il 1° e il 16° del mese
+ *   - mensile: il 1° del mese
+ *   - trimestrale: il 1° di gennaio/aprile/luglio/ottobre
+ *   - semestrale: il 1° di gennaio/luglio
+ *   - annuale: il 1° gennaio
+ */
+export const isCleaningDueOn = (frequency: CleaningFrequency, date: string): boolean => {
+  const d = new Date(`${date}T00:00:00`);
+  if (Number.isNaN(d.getTime())) return false;
+  const day = d.getDate();
+  const month = d.getMonth() + 1; // 1..12
+  switch (frequency) {
+    case 'giornaliera': return true;
+    case 'settimanale': return d.getDay() === 1;
+    case 'quindicinale': return day === 1 || day === 16;
+    case 'mensile': return day === 1;
+    case 'trimestrale': return day === 1 && [1, 4, 7, 10].includes(month);
+    case 'semestrale': return day === 1 && [1, 7].includes(month);
+    case 'annuale': return day === 1 && month === 1;
+    default: return true;
+  }
+};
+
 // Generate date range
 export const generateDateRange = (startDate: string, endDate: string): string[] => {
   const dates: string[] = [];
@@ -88,7 +184,9 @@ export const generateDateRange = (startDate: string, endDate: string): string[] 
 export const createHaccpRecord = (
   date: string,
   signature: string,
-  company: CompanyInfo,
+  // Il nome azienda non compare nel record generato: mantenuto in firma per
+  // compatibilità con i chiamanti, quindi prefisso "_" per noUnusedParameters.
+  _company: CompanyInfo,
   customData?: Partial<HaccpRecord>
 ): HaccpRecord => {
   const now = new Date().toISOString();
@@ -102,6 +200,7 @@ export const createHaccpRecord = (
       fridge2: generateRandomTemperature('fridge'),
     },
     cleaning: customData?.cleaning || generateDefaultCleaning(),
+    cleaningPlan: customData?.cleaningPlan || [],
     notes: customData?.notes || '',
     signature,
     createdAt: now,
@@ -120,8 +219,11 @@ export interface SaveResult {
 
 const toUpsertPayload = (record: HaccpRecord): RecordUpsertPayload => ({
   date: record.date,
+  // La sede del registro: quella del record, altrimenti la sede attiva.
+  locationId: record.locationId ?? getActiveLocation() ?? undefined,
   temperatures: record.temperatures,
   cleaning: record.cleaning,
+  cleaningPlan: record.cleaningPlan,
   notes: record.notes,
   signature: record.signature,
 });
@@ -148,10 +250,12 @@ const queueRecords = async (payloads: RecordUpsertPayload[]): Promise<boolean> =
 const pendingToRecord = (item: PendingRecord): HaccpRecord => {
   const iso = new Date(item.queuedAt).toISOString();
   return {
-    id: `haccp_${item.date}`,
+    id: `haccp_${item.locationId}_${item.date}`,
     date: item.date,
+    locationId: item.locationId || undefined,
     temperatures: item.payload.temperatures ?? {},
     cleaning: item.payload.cleaning,
+    cleaningPlan: item.payload.cleaningPlan ?? [],
     notes: item.payload.notes ?? '',
     signature: item.payload.signature ?? '',
     createdAt: iso,
@@ -160,27 +264,32 @@ const pendingToRecord = (item: PendingRecord): HaccpRecord => {
 };
 
 /**
- * Registri dell'azienda: quelli del backend più quelli ancora in coda offline,
- * così un registro compilato senza rete è subito visibile in archivio.
- * In caso di sovrapposizione vince la versione locale (più recente).
+ * Registri dell'azienda per la sede attiva: quelli del backend più quelli ancora
+ * in coda offline, così un registro compilato senza rete è subito visibile in
+ * archivio. L'identità è (sede, data): in caso di sovrapposizione vince la
+ * versione locale (più recente).
  */
 export const getRecords = async (): Promise<HaccpRecord[]> => {
+  // Il backend filtra già per la sede attiva (o la predefinita).
   const { records } = await activeData.records.list();
   const companyId = getActiveCompany();
   if (!companyId) return records;
 
+  const locationId = getActiveLocation() ?? '';
   let pending: PendingRecord[] = [];
   try {
     pending = await getPendingRecords(companyId);
   } catch {
     pending = [];
   }
+  // Solo i registri in coda per la sede attiva.
+  if (locationId) pending = pending.filter((item) => item.locationId === locationId);
   if (!pending.length) return records;
 
-  const byDate = new Map<string, HaccpRecord>();
-  for (const record of records) byDate.set(record.date, record);
-  for (const item of pending) byDate.set(item.date, pendingToRecord(item));
-  return Array.from(byDate.values()).sort((a, b) => a.date.localeCompare(b.date));
+  const byKey = new Map<string, HaccpRecord>();
+  for (const record of records) byKey.set(`${record.locationId ?? ''}::${record.date}`, record);
+  for (const item of pending) byKey.set(`${item.locationId}::${item.date}`, pendingToRecord(item));
+  return Array.from(byKey.values()).sort((a, b) => a.date.localeCompare(b.date));
 };
 
 /**
@@ -224,20 +333,25 @@ export const saveRecords = async (records: HaccpRecord[]): Promise<SaveResult> =
 };
 
 export const deleteRecordByDate = async (date: string): Promise<void> => {
+  // L'eliminazione vale per la sede attiva (il backend ricade sull'intera
+  // azienda solo se non ne viene indicata alcuna).
   await activeData.records.deleteByDate(date);
   // Rimuove anche l'eventuale copia in coda, per non farla riapparire al sync.
   const companyId = getActiveCompany();
-  if (companyId) await removePendingRecord(companyId, date);
+  if (companyId) await removePendingRecord(companyId, date, getActiveLocation() ?? '');
 };
 
 export const deleteRecordsByMonth = async (year: number, month: number): Promise<void> => {
   await activeData.records.deleteByMonth(year, month);
   const companyId = getActiveCompany();
   if (!companyId) return;
+  const locationId = getActiveLocation() ?? '';
   const prefix = `${year}-${String(month).padStart(2, '0')}`;
   const pending = await getPendingRecords(companyId);
   for (const item of pending) {
-    if (item.date.startsWith(prefix)) await removePendingRecord(companyId, item.date);
+    if (item.locationId === locationId && item.date.startsWith(prefix)) {
+      await removePendingRecord(companyId, item.date, item.locationId);
+    }
   }
 };
 
@@ -266,7 +380,8 @@ export const generatePDF = async (
   company: CompanyInfo,
   equipment?: Equipment[]
 ): Promise<jsPDF> => {
-  const pdf = new jsPDF('landscape', 'mm', 'a4');
+  const JsPDF = await loadJsPdf();
+  const pdf = new JsPDF('landscape', 'mm', 'a4');
   const date = new Date(record.date);
   const monthNames = [
     'Gennaio', 'Febbraio', 'Marzo', 'Aprile', 'Maggio', 'Giugno',
@@ -367,7 +482,8 @@ export const generatePDF = async (
 
 // PDF Generation - Single Day Sanification
 export const generateSanificationPDF = async (record: HaccpRecord, company: CompanyInfo): Promise<jsPDF> => {
-  const pdf = new jsPDF('landscape', 'mm', 'a4');
+  const JsPDF = await loadJsPdf();
+  const pdf = new JsPDF('landscape', 'mm', 'a4');
   const date = new Date(record.date);
   const monthNames = [
     'Gennaio', 'Febbraio', 'Marzo', 'Aprile', 'Maggio', 'Giugno',
@@ -474,7 +590,8 @@ export const generateMonthlyPDF = async (
   month: number,
   equipment?: Equipment[]
 ): Promise<jsPDF> => {
-  const pdf = new jsPDF('landscape', 'mm', 'a4');
+  const JsPDF = await loadJsPdf();
+  const pdf = new JsPDF('landscape', 'mm', 'a4');
   const monthNames = [
     'Gennaio', 'Febbraio', 'Marzo', 'Aprile', 'Maggio', 'Giugno',
     'Luglio', 'Agosto', 'Settembre', 'Ottobre', 'Novembre', 'Dicembre'
@@ -636,7 +753,8 @@ export const generateMonthlyPDF = async (
 
 // PDF Generation - Monthly Sanification Report
 export const generateMonthlySanificationPDF = async (records: HaccpRecord[], company: CompanyInfo, year: number, month: number): Promise<jsPDF> => {
-  const pdf = new jsPDF('landscape', 'mm', 'a4');
+  const JsPDF = await loadJsPdf();
+  const pdf = new JsPDF('landscape', 'mm', 'a4');
   const monthNames = [
     'Gennaio', 'Febbraio', 'Marzo', 'Aprile', 'Maggio', 'Giugno',
     'Luglio', 'Agosto', 'Settembre', 'Ottobre', 'Novembre', 'Dicembre'
@@ -804,7 +922,8 @@ export const generateMonthlySanificationPDF = async (records: HaccpRecord[], com
 };
 
 export const generateZipArchive = async (records: HaccpRecord[], company: CompanyInfo): Promise<Blob> => {
-  const zip = new JSZip();
+  const Zip = await loadJsZip();
+  const zip = new Zip();
   const equipment = await getEquipment();
   
   // Group records by month

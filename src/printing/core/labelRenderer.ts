@@ -3,10 +3,14 @@
 // un canvas. Il layout è calcolato in millimetri e si adatta automaticamente al
 // formato scelto, dando la massima evidenza al nome del prodotto.
 
-import QRCode from 'qrcode';
-import JsBarcode from 'jsbarcode';
+// qrcode e jsbarcode (~150 kB in due) servono solo al disegno di QR/codice a
+// barre sull'etichetta: vengono caricati on demand la prima volta che si
+// rasterizza davvero un'etichetta, così non appesantiscono il resto.
 import type { LabelPayload } from '@/lib/api';
 import { mmToDots, type LabelDocument, type LabelElement, type ResolvedLabelFormat } from './types';
+
+const loadQrCode = () => import('qrcode').then((m) => m.default);
+const loadJsBarcode = () => import('jsbarcode').then((m) => m.default);
 
 /** Formatta una data ISO (YYYY-MM-DD) in formato italiano DD/MM/YYYY. */
 export function formatDateIt(iso: string | undefined): string {
@@ -176,6 +180,10 @@ export async function renderDocumentToCanvas(doc: LabelDocument): Promise<HTMLCa
   ctx.strokeStyle = '#000000';
   ctx.textBaseline = 'top';
 
+  // Librerie di codifica caricate solo se il documento contiene QR/codice a barre.
+  let qrLib: Awaited<ReturnType<typeof loadQrCode>> | null = null;
+  let barcodeLib: Awaited<ReturnType<typeof loadJsBarcode>> | null = null;
+
   for (const el of doc.elements) {
     if (el.type === 'rect') {
       const x = el.x * pxPerMm;
@@ -197,9 +205,10 @@ export async function renderDocumentToCanvas(doc: LabelDocument): Promise<HTMLCa
     }
     if (el.type === 'qr') {
       const sizePx = Math.max(Math.round(el.size * pxPerMm), 16);
+      qrLib ??= await loadQrCode();
       // Canvas temporaneo: il QR va disegnato nitido e poi ridimensionato.
       const tmp = document.createElement('canvas');
-      await QRCode.toCanvas(tmp, el.data, { margin: 0, width: sizePx, errorCorrectionLevel: 'M' });
+      await qrLib.toCanvas(tmp, el.data, { margin: 0, width: sizePx, errorCorrectionLevel: 'M' });
       ctx.imageSmoothingEnabled = false;
       ctx.drawImage(tmp, Math.round(el.x * pxPerMm), Math.round(el.y * pxPerMm), sizePx, sizePx);
       continue;
@@ -207,9 +216,10 @@ export async function renderDocumentToCanvas(doc: LabelDocument): Promise<HTMLCa
     if (el.type === 'barcode') {
       const wPx = Math.max(Math.round(el.w * pxPerMm), 32);
       const hPx = Math.max(Math.round(el.h * pxPerMm), 12);
+      barcodeLib ??= await loadJsBarcode();
       const tmp = document.createElement('canvas');
       try {
-        JsBarcode(tmp, el.data || '-', {
+        barcodeLib(tmp, el.data || '-', {
           format: el.format,
           width: 2,
           height: Math.max(hPx - 14, 10),

@@ -18,6 +18,17 @@ export default defineConfig({
       provider: 'v8',
       reporter: ['text-summary', 'lcov'],
       include: ['src/lib/**'],
+      // Soglie di non-regressione: fissate poco sotto la copertura attuale.
+      // src/lib contiene molta logica pura ma anche moduli di integrazione
+      // (api, client Supabase, report) non coperti da test unitari, quindi le
+      // soglie sono globali e basse: servono a intercettare regressioni grossolane,
+      // non a imporre una copertura alta ovunque.
+      thresholds: {
+        statements: 25,
+        branches: 75,
+        functions: 70,
+        lines: 25,
+      },
     },
   },
 });

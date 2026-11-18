@@ -10,7 +10,8 @@
 // Se il backend non è raggiungibile il pannello lo dichiara esplicitamente e non
 // mostra pulsanti privi di funzionalità.
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
@@ -36,6 +37,8 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 import { api, type AlertCategory, type AlertItem, type AlertListResult } from '@/lib/api';
+import { useAlerts } from '@/hooks/useHaccpQueries';
+import { queryKeys } from '@/lib/queryKeys';
 import { usePushNotifications } from '@/components/Pwa';
 import { cn } from '@/lib/utils';
 
@@ -77,62 +80,43 @@ export function NotificationCenter({
   onNavigate?: (tab: string, entityId?: string | null) => void;
 }) {
   const [open, setOpen] = useState(false);
-  const [data, setData] = useState<AlertListResult | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const push = usePushNotifications(companyId);
+  const queryClient = useQueryClient();
 
-  const load = useCallback(
-    async (silent = false) => {
-      if (!companyId) {
-        setData(null);
-        return;
-      }
-      if (!silent) setLoading(true);
-      try {
-        const res = await api.alerts.list(companyId);
-        setData(res);
-        setError(null);
-      } catch (err) {
-        setError((err as Error).message || 'Avvisi non disponibili');
-      } finally {
-        if (!silent) setLoading(false);
-      }
-    },
-    [companyId],
-  );
+  // Avvisi via React Query: aggiornamento periodico automatico (React Query
+  // sospende il polling quando la scheda non è visibile) e cache condivisa con
+  // il cruscotto e le altre sezioni.
+  const alertsQuery = useAlerts(companyId, { refetchInterval: REFRESH_INTERVAL_MS });
+  const data = alertsQuery.data ?? null;
+  const loading = alertsQuery.isFetching;
+  const error = alertsQuery.error
+    ? (alertsQuery.error as Error).message || 'Avvisi non disponibili'
+    : null;
+  const { refetch } = alertsQuery;
 
-  // Caricamento iniziale + aggiornamento periodico (solo a scheda visibile).
-  useEffect(() => {
-    if (!companyId) {
-      setData(null);
-      return;
-    }
-    void load(true);
-    const timer = window.setInterval(() => {
-      if (document.visibilityState === 'visible') void load(true);
-    }, REFRESH_INTERVAL_MS);
-    return () => window.clearInterval(timer);
-  }, [companyId, load]);
-
-  // Segna come letti gli avvisi quando si apre il pannello.
-  const markAllRead = useCallback(async () => {
+  // Segna come letti gli avvisi quando si apre il pannello: aggiornamento
+  // ottimistico della cache, poi allineamento sul backend.
+  const markAllRead = useCallback(() => {
     if (!companyId || !data || data.counts.unread === 0) return;
-    setData((prev) =>
-      prev ? { ...prev, alerts: prev.alerts.map((a) => ({ ...a, read: true })), counts: { ...prev.counts, unread: 0 } } : prev,
+    queryClient.setQueryData<AlertListResult>(queryKeys.alerts(companyId), (prev) =>
+      prev
+        ? {
+            ...prev,
+            alerts: prev.alerts.map((a) => ({ ...a, read: true })),
+            counts: { ...prev.counts, unread: 0 },
+          }
+        : prev,
     );
-    try {
-      await api.alerts.markRead(companyId);
-    } catch {
+    void api.alerts.markRead(companyId).catch(() => {
       /* lo stato "letto" non è critico: si riallinea al prossimo caricamento */
-    }
-  }, [companyId, data]);
+    });
+  }, [companyId, data, queryClient]);
 
   const handleOpenChange = (next: boolean) => {
     setOpen(next);
     if (next) {
-      void load(true);
-      window.setTimeout(() => void markAllRead(), 800);
+      void refetch();
+      window.setTimeout(() => markAllRead(), 800);
     }
   };
 
@@ -184,7 +168,7 @@ export function NotificationCenter({
             size="icon"
             className="h-8 w-8"
             disabled={loading || !companyId}
-            onClick={() => void load()}
+            onClick={() => void refetch()}
             title="Aggiorna"
             aria-label="Aggiorna avvisi"
           >

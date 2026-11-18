@@ -4,7 +4,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import PublicLayout, { PublicCta, SectionHeading } from '@/components/public/PublicLayout';
 import { Reveal, RevealGroup, RevealItem } from '@/components/public/SectionReveal';
 import { AREAS, BRAND, COMPARISON, FEATURES, SECURITY, type PublicArea } from '@/lib/publicContent';
-import { AREA, areaGradient, areaTint, type AreaAccent } from '@/lib/areaIdentity';
+import { areaGradient, areaTint, type AreaAccent } from '@/lib/areaIdentity';
 import { ArrowRight, Check, ShieldCheck, X } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { cn } from '@/lib/utils';

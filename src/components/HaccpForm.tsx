@@ -6,17 +6,24 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Switch } from '@/components/ui/switch';
 import { Badge } from '@/components/ui/badge';
+import { Separator } from '@/components/ui/separator';
 import { Skeleton } from '@/components/ui/skeleton';
 import { SignaturePad } from './SignaturePad';
 import EquipmentManager from './EquipmentManager';
 import { CompanyInfo, Equipment, EquipmentKind } from '@/types/haccp';
+import { useCleaningPlanStore } from '@/store/cleaningPlanStore';
+import { useLocationsStore } from '@/store/locationsStore';
+import { useEquipment } from '@/hooks/useHaccpQueries';
+import type { CleaningFrequency } from '@/lib/api';
 import {
   createHaccpRecord,
   saveRecord,
   getRecordByDate,
-  getEquipment,
+  isCleaningDueOn,
   EQUIPMENT_RANGES,
   defaultTemperatureForKind,
+  DEFAULT_CLEANING,
+  formStateFromRecord,
 } from '@/lib/haccpUtils';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
@@ -45,6 +52,7 @@ import {
   Flame,
   FileCheck2,
   ShieldCheck,
+  Sparkles,
   type LucideIcon,
 } from 'lucide-react';
 
@@ -91,42 +99,53 @@ const CLEANING_ITEMS: CleaningItem[] = [
 const isTemperatureInRange = (value: number, min: number, max: number) =>
   Number.isFinite(value) && value >= min && value <= max;
 
+/** Etichetta breve della frequenza di un'attività del piano. */
+const FREQUENCY_LABEL: Record<CleaningFrequency, string> = {
+  giornaliera: 'Giornaliera',
+  settimanale: 'Settimanale',
+  quindicinale: 'Quindicinale',
+  mensile: 'Mensile',
+  trimestrale: 'Trimestrale',
+  semestrale: 'Semestrale',
+  annuale: 'Annuale',
+};
+
+/** Elenco vuoto condiviso: identità stabile per i dati non ancora disponibili. */
+const EMPTY_EQUIPMENT: Equipment[] = [];
+
 export const HaccpForm: React.FC<HaccpFormProps> = ({ company, onRecordSaved }) => {
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
-  const [equipment, setEquipment] = useState<Equipment[]>([]);
+  // Attrezzature di conservazione via React Query: cache condivisa con gli
+  // altri moduli (cruscotto, manuale, pacchetto ispezione).
+  const equipmentQuery = useEquipment();
+  const equipment = equipmentQuery.data ?? EMPTY_EQUIPMENT;
   const [temperatures, setTemperatures] = useState<Record<string, number>>({});
-  const [cleaning, setCleaning] = useState({
-    equipment: true,
-    surfaces: true,
-    utensils: true,
-    floors: true,
-    refrigerators: true,
-    walls: true,
-    lighting: true,
-    doors: true,
-    shelves: true,
-    toilets: true,
-    wasteContainers: true,
-    ovens: true,
-  });
+  const [cleaning, setCleaning] = useState<Record<CleaningKey, boolean>>(DEFAULT_CLEANING);
   const [notes, setNotes] = useState('');
   const [signature, setSignature] = useState('');
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
+  // Esito della checklist guidata del piano di sanificazione: id voce → completata.
+  const [planChecks, setPlanChecks] = useState<Record<string, boolean>>({});
 
-  // Attrezzature configurate (dinamiche: possono essere aggiunte/rinominate/eliminate).
+  const { items: planItems, load: loadPlan } = useCleaningPlanStore();
+  // Sede attiva: il registro giornaliero è identificato da (sede, data).
+  const activeLocationId = useLocationsStore((s) => s.activeId);
+
+  // Le attrezzature sono dinamiche: possono essere aggiunte, rinominate o
+  // eliminate dal gestore, che al termine richiede una nuova lettura.
+  const { refetch: refetchEquipment } = equipmentQuery;
   const loadEquipment = useCallback(async () => {
-    try {
-      setEquipment(await getEquipment());
-    } catch (e) {
-      console.error('Errore caricamento attrezzature:', e);
-      toast.error('Errore nel caricamento delle attrezzature');
-    }
-  }, []);
+    await refetchEquipment();
+  }, [refetchEquipment]);
 
   React.useEffect(() => {
-    void loadEquipment();
-  }, [loadEquipment]);
+    if (equipmentQuery.isError) toast.error('Errore nel caricamento delle attrezzature');
+  }, [equipmentQuery.isError]);
+
+  React.useEffect(() => {
+    void loadPlan();
+  }, [loadPlan]);
 
   // Load existing record when date changes
   React.useEffect(() => {
@@ -135,11 +154,16 @@ export const HaccpForm: React.FC<HaccpFormProps> = ({ company, onRecordSaved }) 
     (async () => {
       try {
         const existingRecord = await getRecordByDate(selectedDate);
-        if (cancelled || !existingRecord) return;
-        setTemperatures(existingRecord.temperatures ?? {});
-        setCleaning(existingRecord.cleaning);
-        setNotes(existingRecord.notes || '');
-        setSignature(existingRecord.signature || '');
+        if (cancelled) return;
+        // Stato del modulo derivato dal registro della data scelta: se la giornata
+        // non ha registro (o ne ha uno senza firma/note) i campi vengono azzerati,
+        // evitando di salvare una giornata con i dati di un'altra.
+        const formState = formStateFromRecord(existingRecord);
+        setPlanChecks(formState.planChecks);
+        setTemperatures(formState.temperatures);
+        setCleaning(formState.cleaning);
+        setNotes(formState.notes);
+        setSignature(formState.signature);
       } catch (e) {
         console.error('Errore caricamento registro:', e);
       } finally {
@@ -147,7 +171,7 @@ export const HaccpForm: React.FC<HaccpFormProps> = ({ company, onRecordSaved }) 
       }
     })();
     return () => { cancelled = true; };
-  }, [selectedDate]);
+  }, [selectedDate, activeLocationId]);
 
   // Garantisce un valore per ogni attrezzatura configurata (anche se aggiunta
   // dopo la compilazione o assente nel registro storico).
@@ -165,6 +189,14 @@ export const HaccpForm: React.FC<HaccpFormProps> = ({ company, onRecordSaved }) 
     });
   }, [equipment]);
 
+  // Voci del piano di sanificazione previste per la data selezionata: guidano
+  // la checklist giornaliera (le attività non previste restano fuori).
+  const duePlanItems = React.useMemo(
+    () => planItems.filter((item) => isCleaningDueOn(item.frequency, selectedDate)),
+    [planItems, selectedDate],
+  );
+  const planCompleted = duePlanItems.filter((item) => planChecks[item.id]).length;
+
   const handleSave = async () => {
     if (!signature) {
       toast.error('La firma OSA è obbligatoria');
@@ -174,7 +206,13 @@ export const HaccpForm: React.FC<HaccpFormProps> = ({ company, onRecordSaved }) 
     const record = createHaccpRecord(selectedDate, signature, company, {
       temperatures,
       cleaning,
-      notes
+      cleaningPlan: duePlanItems.map((item) => ({
+        itemId: item.id,
+        area: item.area,
+        activity: item.activity,
+        done: !!planChecks[item.id],
+      })),
+      notes,
     });
 
     setIsSaving(true);
@@ -446,7 +484,84 @@ export const HaccpForm: React.FC<HaccpFormProps> = ({ company, onRecordSaved }) 
               ))}
             </div>
           ) : (
-            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            <div className="space-y-6">
+              {/* Checklist guidata dal piano di sanificazione: propone solo le
+                  attività previste per la data selezionata. */}
+              <div className="space-y-3">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="flex items-center gap-2">
+                    <Sparkles className="h-4 w-4 text-primary" />
+                    <p className="text-sm font-semibold">Attività del piano previste oggi</p>
+                  </div>
+                  {duePlanItems.length > 0 && (
+                    <Badge
+                      variant="outline"
+                      className={cn(
+                        'gap-1.5 font-medium',
+                        planCompleted === duePlanItems.length
+                          ? 'border-success/40 bg-success/10 text-success'
+                          : 'border-border bg-muted/50 text-muted-foreground'
+                      )}
+                    >
+                      <CheckCircle2 className="h-3.5 w-3.5" />
+                      {planCompleted}/{duePlanItems.length} svolte
+                    </Badge>
+                  )}
+                </div>
+
+                {planItems.length === 0 ? (
+                  <p className="rounded-xl border border-dashed border-border bg-card px-4 py-6 text-center text-sm text-muted-foreground">
+                    Nessun piano configurato. Apri «Piano di Sanificazione» per definire le attività ricorrenti.
+                  </p>
+                ) : duePlanItems.length === 0 ? (
+                  <p className="rounded-xl border border-dashed border-border bg-card px-4 py-6 text-center text-sm text-muted-foreground">
+                    Nessuna attività pianificata per questa data.
+                  </p>
+                ) : (
+                  <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                    {duePlanItems.map((item) => {
+                      const checked = !!planChecks[item.id];
+                      return (
+                        <div
+                          key={item.id}
+                          className={cn(
+                            'rounded-xl border px-3.5 py-3 transition-colors',
+                            checked ? 'border-success/40 bg-success/[0.06]' : 'border-border bg-card'
+                          )}
+                        >
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="min-w-0">
+                              <p className="text-sm font-medium leading-tight">{item.activity}</p>
+                              <p className="mt-0.5 text-xs text-muted-foreground">{item.area}</p>
+                            </div>
+                            <Switch
+                              checked={checked}
+                              aria-label={`${item.activity} (${item.area})`}
+                              onCheckedChange={(value) =>
+                                setPlanChecks((prev) => ({ ...prev, [item.id]: value }))
+                              }
+                            />
+                          </div>
+                          <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
+                            <Badge variant="outline" className="border-primary/30 bg-primary/5 text-primary">
+                              {FREQUENCY_LABEL[item.frequency]}
+                            </Badge>
+                            {item.product && (
+                              <span>{item.product}{item.dosage ? ` · ${item.dosage}` : ''}</span>
+                            )}
+                            {item.responsible && <span>· {item.responsible}</span>}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+
+              <Separator />
+
+              {/* Caselle storiche: restano per i registri già esistenti. */}
+              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
               {CLEANING_ITEMS.map((item) => {
                 const ItemIcon = item.icon;
                 const checked = cleaning[item.key];
@@ -488,6 +603,7 @@ export const HaccpForm: React.FC<HaccpFormProps> = ({ company, onRecordSaved }) 
                   </div>
                 );
               })}
+              </div>
             </div>
           )}
         </CardContent>

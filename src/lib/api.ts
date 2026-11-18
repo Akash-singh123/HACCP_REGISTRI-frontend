@@ -1,6 +1,10 @@
 import { invokeFunction, supabase, type FunctionError } from './supabaseClient';
 import { captureError } from './observability';
-import type { HaccpRecord, Equipment, EquipmentKind } from '@/types/haccp';
+// Solo tipi: lo schema Zod (~126 kB) viene importato on demand dentro
+// `semi.get`, l'unico punto che valida a runtime un payload non tipizzato.
+// Così zod resta fuori dal bundle di avvio dell'app.
+import type { SemiGetResponse, SemiProductTemplate } from './schemas';
+import type { HaccpRecord, CleaningCheck, Equipment, EquipmentKind } from '@/types/haccp';
 
 export class ApiError extends Error {
   status: number;
@@ -12,6 +16,16 @@ export class ApiError extends Error {
     this.status = status;
     this.code = code;
   }
+}
+
+/**
+ * Vero se l'errore è dovuto all'impossibilità di contattare il backend
+ * (`status` 0: nessuna risposta HTTP). Distingue l'offline — dove la modifica
+ * viene accodata e ritentata — da un rifiuto del server, che invece va
+ * annullato lato client perché i dati non sono accettabili.
+ */
+export function isOfflineError(err: unknown): boolean {
+  return err instanceof ApiError && err.status === 0;
 }
 
 /**
@@ -57,6 +71,8 @@ export interface AllergenUpsertPayload {
   name: string;
   description?: string;
   allergens: string[];
+  /** Sede della scheda: se assente il backend usa la sede predefinita. */
+  locationId?: string;
 }
 
 /**
@@ -73,6 +89,20 @@ export function getActiveCompany(): string | null {
 function requireCompany(): string {
   if (!activeCompanyId) throw new ApiError('Azienda non selezionata', 400, 'no_company');
   return activeCompanyId;
+}
+
+/**
+ * Sede attiva a livello di modulo: impostata dal negozio delle sedi.
+ * I registri e gli abbattimenti sono organizzati per sede; quando nessuna sede
+ * è selezionata il backend ricade sulla sede predefinita dell'azienda, quindi
+ * le aziende a sede unica funzionano senza alcuna selezione.
+ */
+let activeLocationId: string | null = null;
+export function setActiveLocation(id: string | null): void {
+  activeLocationId = id;
+}
+export function getActiveLocation(): string | null {
+  return activeLocationId;
 }
 
 export interface AdminCompany {
@@ -134,11 +164,118 @@ export interface AdminClient {
   suspended_at?: string | null;
 }
 
+// ── Sedi (multi-sede) ────────────────────────────────────────────────────
+// I registri HACCP e gli abbattimenti sono organizzati per sede; una sede
+// predefinita viene creata automaticamente per ogni azienda, così le aziende
+// a sede unica restano identiche a prima.
+
+/** Sede dell'azienda così come restituita dal backend. */
+export interface Location {
+  id: string;
+  nome: string;
+  indirizzo: string;
+  citta: string;
+  note: string;
+  /** Ordine di visualizzazione (crescente). */
+  posizione: number;
+  /** Vero per la sede predefinita (una sola per azienda, non eliminabile). */
+  predefinita: boolean;
+  createdAt: number;
+}
+
+/** Payload di creazione/aggiornamento di una sede. */
+export interface LocationPayload {
+  /** Presente per l'aggiornamento; assente per la creazione (id dal backend). */
+  id?: string;
+  nome: string;
+  indirizzo?: string;
+  citta?: string;
+  note?: string;
+  posizione?: number;
+}
+
+// ── Utenti e inviti (lato azienda) ───────────────────────────────────────
+
+/** Ruolo di un collaboratore all'interno dell'azienda. */
+export type TeamRole = 'owner' | 'admin' | 'staff' | 'viewer';
+
+/** Collaboratore dell'azienda attiva (membro con ruolo). */
+export interface TeamMember {
+  user_id: string;
+  email: string | null;
+  role: TeamRole;
+  /** Vero se il membro è l'utente attualmente connesso. */
+  is_self: boolean;
+}
+
+/** Invito in attesa di accettazione. */
+export interface CompanyInvitation {
+  id: string;
+  email: string;
+  role: TeamRole;
+  /** Segreto per costruire il link di accettazione. */
+  token: string;
+  created_at: string;
+  expires_at: string;
+}
+
+/** Esito della creazione di un invito. */
+export interface CreateInvitationResult {
+  invitation: CompanyInvitation;
+  /** Falso se l'email non è stata inviata (es. utente già esistente). */
+  emailSent: boolean;
+}
+
+// ── Piano di sanificazione ───────────────────────────────────────────────
+
+/** Cadenza di un'attività del piano di sanificazione. */
+export type CleaningFrequency =
+  | 'giornaliera'
+  | 'settimanale'
+  | 'quindicinale'
+  | 'mensile'
+  | 'trimestrale'
+  | 'semestrale'
+  | 'annuale';
+
+/** Attività del piano di sanificazione (anagrafica configurabile). */
+export interface CleaningPlanItem {
+  id: string;
+  /** Zona/area del locale. */
+  area: string;
+  /** Attività prevista dal piano. */
+  activity: string;
+  frequency: CleaningFrequency;
+  product: string;
+  dosage: string;
+  responsible: string;
+  notes: string;
+  position: number;
+  createdAt: number;
+}
+
+/** Payload di creazione/aggiornamento di una voce del piano. */
+export interface CleaningPlanItemPayload {
+  id?: string;
+  area: string;
+  activity: string;
+  frequency: CleaningFrequency;
+  product?: string;
+  dosage?: string;
+  responsible?: string;
+  notes?: string;
+  position?: number;
+}
+
 /** Payload per il salvataggio di un registro HACCP giornaliero. */
 export interface RecordUpsertPayload {
   date: string;
+  /** Sede del registro: se assente il backend usa la sede predefinita. */
+  locationId?: string;
   temperatures: HaccpRecord['temperatures'];
   cleaning: HaccpRecord['cleaning'];
+  /** Esito della checklist guidata del piano (assente nei registri storici). */
+  cleaningPlan?: CleaningCheck[];
   notes?: string;
   signature?: string;
 }
@@ -168,6 +305,8 @@ export interface IncomingFoodRow {
 /** Payload per la creazione/aggiornamento di una materia prima in ingresso. */
 export interface IncomingFoodPayload {
   id?: string;
+  /** Sede del prodotto: se assente il backend usa la sede predefinita. */
+  locationId?: string;
   nome: string;
   lotto?: string;
   dataAcquisto?: string;
@@ -202,6 +341,8 @@ export interface SemiProductBatch {
 
 /** Payload per registrare/aggiornare un lotto di semilavorato. */
 export interface SemiProductBatchPayload {
+  /** Sede del lotto: se assente il backend usa la sede predefinita. */
+  locationId?: string;
   prodotto: string;
   lotto: string;
   dataProduzione?: string;
@@ -245,6 +386,92 @@ export interface IncomingConsumeResult {
   stato: StockStatus;
 }
 
+// ── Abbattimenti termici (raffreddamento rapido) ──────────────────────────
+
+/** Tipo di trattamento di raffreddamento rapido. */
+export type BlastKind = 'abbattimento' | 'surgelamento';
+/** Esito del ciclo: in corso, conforme o non conforme (calcolato dal backend). */
+export type BlastOutcome = 'in_corso' | 'conforme' | 'non_conforme';
+
+/** Ciclo di abbattimento termico così come restituito dal backend. */
+export interface BlastChilling {
+  id: string;
+  /** Sede del ciclo: fissata alla creazione e non modificabile. */
+  locationId?: string;
+  prodotto: string;
+  lotto: string;
+  tipo: BlastKind;
+  /** Istante di inizio (ISO). */
+  iniziatoIl: string;
+  /** Istante di fine (ISO) oppure null se ancora in corso. */
+  terminatoIl: string | null;
+  temperaturaIniziale: number | null;
+  temperaturaFinale: number | null;
+  /** Soglia di riferimento (°C) derivata dal tipo di trattamento. */
+  temperaturaObiettivo: number;
+  /** Tempo massimo consentito (minuti) derivato dal tipo di trattamento. */
+  minutiMassimi: number;
+  /** Durata effettiva in minuti (null finché il ciclo è in corso). */
+  durataMinuti: number | null;
+  attrezzatura: string;
+  operatore: string;
+  esito: BlastOutcome;
+  note: string;
+  firma: string;
+  createdAt: number;
+}
+
+/**
+ * Payload di creazione/aggiornamento di un abbattimento. Esito e durata NON
+ * vengono inviati: il backend li calcola dagli orari e dalle temperature, così
+ * il dispositivo non può dichiarare conforme un ciclo che non lo è.
+ */
+export interface BlastChillingPayload {
+  id?: string;
+  /** Sede del ciclo: usata solo alla creazione (fissata in seguito). */
+  locationId?: string;
+  prodotto: string;
+  lotto?: string;
+  tipo: BlastKind;
+  iniziatoIl: string;
+  terminatoIl?: string | null;
+  temperaturaIniziale?: number | null;
+  temperaturaFinale?: number | null;
+  attrezzatura?: string;
+  operatore?: string;
+  note?: string;
+  firma?: string;
+}
+
+// ── Anagrafica fornitori ──────────────────────────────────────────────────
+
+/** Fornitore dell'azienda (anagrafica collegata agli alimenti in ingresso). */
+export interface Supplier {
+  id: string;
+  nome: string;
+  categoria: string;
+  partitaIva: string;
+  indirizzo: string;
+  telefono: string;
+  email: string;
+  referente: string;
+  note: string;
+  createdAt: number;
+}
+
+/** Payload di creazione/aggiornamento di un fornitore. */
+export interface SupplierPayload {
+  id?: string;
+  nome: string;
+  categoria?: string;
+  partitaIva?: string;
+  indirizzo?: string;
+  telefono?: string;
+  email?: string;
+  referente?: string;
+  note?: string;
+}
+
 // ── Registro (audit trail) dell'archiviazione delle scorte ─────────────────
 
 /**
@@ -275,6 +502,86 @@ export interface StockAuditEntry {
   userName: string | null;
   meta: Record<string, unknown>;
   createdAt: string;
+}
+
+// ── Tracciabilità a ritroso (Recall) ───────────────────────────────────────
+// Ricerca per lotto (o prodotto/fornitore) che ricostruisce la catena di
+// filiera: alimento in ingresso → impiego nei semilavorati e negli
+// abbattimenti, con i movimenti registrati. La ricerca copre l'intera azienda.
+
+/** Come un lotto di semilavorato è stato trovato nella ricerca. */
+export type RecallMatchType = 'lot' | 'ingredient';
+
+/** Alimento in ingresso trovato dalla ricerca di tracciabilità. */
+export interface RecallIncoming {
+  id: string;
+  nome: string;
+  lotto: string;
+  fornitore: string;
+  /** Recapiti del fornitore se presente in anagrafica (match per nome). */
+  fornitoreDettaglio: Supplier | null;
+  dataAcquisto: string;
+  dataScadenza: string;
+  quantita: number | null;
+  quantitaResidua: number | null;
+  unita: string;
+  categoria: string;
+  stato: StockStatus;
+  sede: string;
+  createdAt: number;
+}
+
+/** Lotto di semilavorato trovato dalla ricerca di tracciabilità. */
+export interface RecallSemiBatch {
+  id: string;
+  prodotto: string;
+  lotto: string;
+  dataProduzione: string;
+  dataScadenza: string;
+  quantitaIniziale: number | null;
+  quantitaResidua: number | null;
+  unita: string;
+  categoria: string;
+  stato: StockStatus;
+  sede: string;
+  matchType: RecallMatchType;
+  /** Ingredienti che hanno generato il match (matchType = 'ingredient'). */
+  matchedIngredients: { nome: string; lotto: string }[];
+  ingredienti: { nome: string; lotto: string }[];
+  createdAt: number;
+}
+
+/** Ciclo di abbattimento trovato dalla ricerca di tracciabilità. */
+export interface RecallBlast {
+  id: string;
+  prodotto: string;
+  lotto: string;
+  tipo: BlastKind;
+  iniziatoIl: string;
+  esito: string;
+  sede: string;
+}
+
+/** Movimento di magazzino collegato a una scorta individuata. */
+export interface RecallEvent {
+  id: string;
+  action: string;
+  entity: string | null;
+  entityId: string | null;
+  userName: string;
+  meta: Record<string, unknown>;
+  createdAt: string;
+}
+
+/** Esito completo di una ricerca di tracciabilità a ritroso. */
+export interface RecallResult {
+  query: string;
+  generatedAt: string;
+  summary: { incoming: number; semiBatches: number; blast: number; events: number };
+  incoming: RecallIncoming[];
+  semiBatches: RecallSemiBatch[];
+  blast: RecallBlast[];
+  events: RecallEvent[];
 }
 
 // ── Regole di scadenza configurabili per azienda ───────────────────────────
@@ -796,8 +1103,8 @@ export interface TelemetryStats {
 
 export const api = {
   allergenTable: {
-    list: (companyId: string) =>
-      call<{ products: AllergenRow[] }>('allergen-table', { action: 'list' }, companyId),
+    list: (companyId: string, locationId?: string) =>
+      call<{ products: AllergenRow[] }>('allergen-table', { action: 'list', locationId }, companyId),
     upsert: (companyId: string, payload: AllergenUpsertPayload) =>
       call<{ product: AllergenRow }>('allergen-table', { action: 'upsert', ...payload }, companyId),
     remove: (companyId: string, id: string) =>
@@ -892,11 +1199,36 @@ export const api = {
     },
   },
 
+  // Utenti e inviti dell'azienda attiva. Riservato a owner/admin (verificato
+  // lato server). L'accettazione dell'invito non usa l'azienda attiva: si basa
+  // sul token ricevuto per email, perché l'invitato non è ancora membro.
+  team: {
+    listMembers: (companyId: string) =>
+      call<{ items: TeamMember[] }>('team', { action: 'members.list' }, companyId),
+    setMemberRole: (companyId: string, userId: string, role: TeamRole) =>
+      call<{ user_id: string; role: TeamRole }>('team', { action: 'members.setRole', user_id: userId, role }, companyId),
+    removeMember: (companyId: string, userId: string) =>
+      call<{ ok: boolean }>('team', { action: 'members.remove', user_id: userId }, companyId),
+    listInvitations: (companyId: string) =>
+      call<{ items: CompanyInvitation[] }>('team', { action: 'invitations.list' }, companyId),
+    createInvitation: (companyId: string, payload: { email: string; role: TeamRole }) =>
+      call<CreateInvitationResult>('team', { action: 'invitations.create', ...payload }, companyId),
+    revokeInvitation: (companyId: string, id: string) =>
+      call<{ ok: boolean }>('team', { action: 'invitations.revoke', id }, companyId),
+    previewInvitation: (token: string) =>
+      call<{ company_name: string; role: TeamRole; email: string }>('team', { action: 'invitations.preview', token }),
+    acceptInvitation: (token: string) =>
+      call<{ company_id: string; company_name: string; role: TeamRole }>('team', {
+        action: 'invitations.accept',
+        token,
+      }),
+  },
+
   // Dati di dominio: registri HACCP, materie prime in ingresso, modelli semilavorati.
   data: {
     records: {
-      list: (companyId: string) =>
-        call<{ records: HaccpRecord[] }>('haccp-data', { action: 'records.list' }, companyId),
+      list: (companyId: string, locationId?: string) =>
+        call<{ records: HaccpRecord[] }>('haccp-data', { action: 'records.list', locationId }, companyId),
       upsert: (companyId: string, payload: RecordUpsertPayload) =>
         call<{ record: HaccpRecord }>('haccp-data', { action: 'records.upsert', ...payload }, companyId),
       upsertMany: (companyId: string, records: RecordUpsertPayload[]) =>
@@ -904,16 +1236,16 @@ export const api = {
       // Generazione massiva riservata al gestore dell'applicazione (verificata lato server).
       generateRange: (companyId: string, records: RecordUpsertPayload[]) =>
         call<{ saved: number }>('haccp-data', { action: 'records.generateRange', records }, companyId),
-      deleteByDate: (companyId: string, date: string) =>
-        call<{ ok: boolean }>('haccp-data', { action: 'records.deleteByDate', date }, companyId),
-      deleteByMonth: (companyId: string, year: number, month: number) =>
-        call<{ ok: boolean }>('haccp-data', { action: 'records.deleteByMonth', year, month }, companyId),
-      deleteAll: (companyId: string) =>
-        call<{ ok: boolean }>('haccp-data', { action: 'records.deleteAll' }, companyId),
+      deleteByDate: (companyId: string, date: string, locationId?: string) =>
+        call<{ ok: boolean }>('haccp-data', { action: 'records.deleteByDate', date, locationId }, companyId),
+      deleteByMonth: (companyId: string, year: number, month: number, locationId?: string) =>
+        call<{ ok: boolean }>('haccp-data', { action: 'records.deleteByMonth', year, month, locationId }, companyId),
+      deleteAll: (companyId: string, locationId?: string) =>
+        call<{ ok: boolean }>('haccp-data', { action: 'records.deleteAll', locationId }, companyId),
     },
     incoming: {
-      list: (companyId: string) =>
-        call<{ items: IncomingFoodRow[] }>('haccp-data', { action: 'incoming.list' }, companyId),
+      list: (companyId: string, locationId?: string) =>
+        call<{ items: IncomingFoodRow[] }>('haccp-data', { action: 'incoming.list', locationId }, companyId),
       upsert: (companyId: string, payload: IncomingFoodPayload) =>
         call<{ id: string }>('haccp-data', { action: 'incoming.upsert', ...payload }, companyId),
       setStatus: (companyId: string, id: string, stato: StockStatus) =>
@@ -925,14 +1257,29 @@ export const api = {
         call<{ ok: boolean }>('haccp-data', { action: 'incoming.delete', id }, companyId),
     },
     semi: {
-      get: (companyId: string) =>
-        call<{ templates: unknown; categories: unknown }>('haccp-data', { action: 'semi.get' }, companyId),
-      save: (companyId: string, payload: { templates: unknown[]; categories: string[] }) =>
+      // Il contenuto è JSON libero scritto dal client: viene validato e
+      // normalizzato a runtime dallo schema, così un payload corrotto diventa
+      // un errore esplicito invece di propagarsi non tipizzato.
+      get: async (companyId: string): Promise<SemiGetResponse> => {
+        const raw = await call<unknown>('haccp-data', { action: 'semi.get' }, companyId);
+        const { semiGetResponseSchema } = await import('./schemas');
+        const parsed = semiGetResponseSchema.safeParse(raw);
+        if (!parsed.success) {
+          captureError(parsed.error, {
+            source: 'api',
+            level: 'warning',
+            context: { fn: 'haccp-data', action: 'semi.get', code: 'invalid_payload' },
+          });
+          throw new ApiError('Risposta dei semilavorati non valida', 502, 'invalid_payload');
+        }
+        return parsed.data;
+      },
+      save: (companyId: string, payload: { templates: SemiProductTemplate[]; categories: string[] }) =>
         call<{ ok: boolean }>('haccp-data', { action: 'semi.save', ...payload }, companyId),
       // Lotti di produzione registrati (tracciabilità, scadenze, archivio).
       batches: {
-        list: (companyId: string) =>
-          call<{ items: SemiProductBatch[] }>('haccp-data', { action: 'semi.batches.list' }, companyId),
+        list: (companyId: string, locationId?: string) =>
+          call<{ items: SemiProductBatch[] }>('haccp-data', { action: 'semi.batches.list', locationId }, companyId),
         upsert: (companyId: string, payload: SemiProductBatchPayload) =>
           call<{ item: SemiProductBatch }>('haccp-data', { action: 'semi.batches.upsert', ...payload }, companyId),
         update: (companyId: string, payload: SemiProductBatchPatch) =>
@@ -947,6 +1294,13 @@ export const api = {
       audit: (companyId: string, params?: { entity?: 'incoming_foods' | 'semi_product_batches'; limit?: number }) =>
         call<{ items: StockAuditEntry[] }>('haccp-data', { action: 'stock.audit', ...params }, companyId),
     },
+    // Tracciabilità a ritroso (recall): ricerca a livello azienda che collega
+    // un lotto al fornitore, agli impieghi (semilavorati, abbattimenti) e ai
+    // movimenti di magazzino.
+    trace: {
+      recall: (companyId: string, query: string) =>
+        call<RecallResult>('haccp-data', { action: 'trace.recall', query }, companyId),
+    },
     equipment: {
       list: (companyId: string) =>
         call<{ equipment: Equipment[] }>('haccp-data', { action: 'equipment.list' }, companyId),
@@ -954,6 +1308,46 @@ export const api = {
         call<{ equipment: Equipment }>('haccp-data', { action: 'equipment.upsert', ...payload }, companyId),
       remove: (companyId: string, id: string) =>
         call<{ ok: boolean }>('haccp-data', { action: 'equipment.delete', id }, companyId),
+    },
+    // Abbattimenti termici: registro del raffreddamento rapido (abbattimento
+    // positivo e surgelamento). Esito e durata sono calcolati dal backend.
+    blast: {
+      list: (companyId: string, locationId?: string) =>
+        call<{ items: BlastChilling[] }>('haccp-data', { action: 'blast.list', locationId }, companyId),
+      upsert: (companyId: string, payload: BlastChillingPayload) =>
+        call<{ item: BlastChilling }>('haccp-data', { action: 'blast.upsert', ...payload }, companyId),
+      remove: (companyId: string, id: string) =>
+        call<{ ok: boolean }>('haccp-data', { action: 'blast.delete', id }, companyId),
+    },
+    // Anagrafica fornitori: elenco strutturato collegato agli alimenti in
+    // ingresso (tracciabilità di filiera).
+    suppliers: {
+      list: (companyId: string) =>
+        call<{ items: Supplier[] }>('haccp-data', { action: 'suppliers.list' }, companyId),
+      upsert: (companyId: string, payload: SupplierPayload) =>
+        call<{ item: Supplier }>('haccp-data', { action: 'suppliers.upsert', ...payload }, companyId),
+      remove: (companyId: string, id: string) =>
+        call<{ ok: boolean }>('haccp-data', { action: 'suppliers.delete', id }, companyId),
+    },
+    // Piano di sanificazione: anagrafica configurabile delle attività di
+    // pulizia/sanificazione, base della checklist guidata del registro.
+    cleaningPlan: {
+      list: (companyId: string) =>
+        call<{ items: CleaningPlanItem[] }>('haccp-data', { action: 'cleaningPlan.list' }, companyId),
+      upsert: (companyId: string, payload: CleaningPlanItemPayload) =>
+        call<{ item: CleaningPlanItem }>('haccp-data', { action: 'cleaningPlan.upsert', ...payload }, companyId),
+      remove: (companyId: string, id: string) =>
+        call<{ ok: boolean }>('haccp-data', { action: 'cleaningPlan.delete', id }, companyId),
+    },
+    // Anagrafica delle sedi: i registri e gli abbattimenti sono filtrati per
+    // sede. L'id può essere generato dal client per creare una sede offline.
+    locations: {
+      list: (companyId: string) =>
+        call<{ items: Location[] }>('haccp-data', { action: 'locations.list' }, companyId),
+      upsert: (companyId: string, payload: LocationPayload) =>
+        call<{ item: Location }>('haccp-data', { action: 'locations.upsert', ...payload }, companyId),
+      remove: (companyId: string, id: string) =>
+        call<{ ok: boolean }>('haccp-data', { action: 'locations.delete', id }, companyId),
     },
   },
 
@@ -1097,17 +1491,29 @@ export const api = {
 
 /** Varianti che usano automaticamente l'azienda attiva (per i moduli non-React). */
 export const activeData = {
+  team: {
+    listMembers: () => api.team.listMembers(requireCompany()),
+    setMemberRole: (userId: string, role: TeamRole) =>
+      api.team.setMemberRole(requireCompany(), userId, role),
+    removeMember: (userId: string) => api.team.removeMember(requireCompany(), userId),
+    listInvitations: () => api.team.listInvitations(requireCompany()),
+    createInvitation: (payload: { email: string; role: TeamRole }) =>
+      api.team.createInvitation(requireCompany(), payload),
+    revokeInvitation: (id: string) => api.team.revokeInvitation(requireCompany(), id),
+  },
   records: {
-    list: () => api.data.records.list(requireCompany()),
+    list: () => api.data.records.list(requireCompany(), getActiveLocation() ?? undefined),
     upsert: (payload: RecordUpsertPayload) => api.data.records.upsert(requireCompany(), payload),
     upsertMany: (records: RecordUpsertPayload[]) => api.data.records.upsertMany(requireCompany(), records),
     generateRange: (records: RecordUpsertPayload[]) => api.data.records.generateRange(requireCompany(), records),
-    deleteByDate: (date: string) => api.data.records.deleteByDate(requireCompany(), date),
-    deleteByMonth: (year: number, month: number) => api.data.records.deleteByMonth(requireCompany(), year, month),
-    deleteAll: () => api.data.records.deleteAll(requireCompany()),
+    deleteByDate: (date: string) =>
+      api.data.records.deleteByDate(requireCompany(), date, getActiveLocation() ?? undefined),
+    deleteByMonth: (year: number, month: number) =>
+      api.data.records.deleteByMonth(requireCompany(), year, month, getActiveLocation() ?? undefined),
+    deleteAll: () => api.data.records.deleteAll(requireCompany(), getActiveLocation() ?? undefined),
   },
   incoming: {
-    list: () => api.data.incoming.list(requireCompany()),
+    list: () => api.data.incoming.list(requireCompany(), getActiveLocation() ?? undefined),
     upsert: (payload: IncomingFoodPayload) => api.data.incoming.upsert(requireCompany(), payload),
     setStatus: (id: string, stato: StockStatus) => api.data.incoming.setStatus(requireCompany(), id, stato),
     consume: (payload: ConsumePayload) => api.data.incoming.consume(requireCompany(), payload),
@@ -1115,10 +1521,10 @@ export const activeData = {
   },
   semi: {
     get: () => api.data.semi.get(requireCompany()),
-    save: (payload: { templates: unknown[]; categories: string[] }) =>
+    save: (payload: { templates: SemiProductTemplate[]; categories: string[] }) =>
       api.data.semi.save(requireCompany(), payload),
     batches: {
-      list: () => api.data.semi.batches.list(requireCompany()),
+      list: () => api.data.semi.batches.list(requireCompany(), getActiveLocation() ?? undefined),
       upsert: (payload: SemiProductBatchPayload) => api.data.semi.batches.upsert(requireCompany(), payload),
       update: (payload: SemiProductBatchPatch) => api.data.semi.batches.update(requireCompany(), payload),
       consume: (payload: ConsumePayload) => api.data.semi.batches.consume(requireCompany(), payload),
@@ -1128,11 +1534,37 @@ export const activeData = {
     audit: (params?: { entity?: 'incoming_foods' | 'semi_product_batches'; limit?: number }) =>
       api.data.stock.audit(requireCompany(), params),
   },
+  trace: {
+    // La ricerca di tracciabilità copre l'intera azienda (non la sola sede
+    // attiva): un lotto può essere stato distribuito su più sedi.
+    recall: (query: string) => api.data.trace.recall(requireCompany(), query),
+  },
   equipment: {
     list: () => api.data.equipment.list(requireCompany()),
     upsert: (payload: { id?: string; kind: EquipmentKind; name: string }) =>
       api.data.equipment.upsert(requireCompany(), payload),
     remove: (id: string) => api.data.equipment.remove(requireCompany(), id),
+  },
+  blast: {
+    list: () => api.data.blast.list(requireCompany(), getActiveLocation() ?? undefined),
+    upsert: (payload: BlastChillingPayload) => api.data.blast.upsert(requireCompany(), payload),
+    remove: (id: string) => api.data.blast.remove(requireCompany(), id),
+  },
+  suppliers: {
+    list: () => api.data.suppliers.list(requireCompany()),
+    upsert: (payload: SupplierPayload) => api.data.suppliers.upsert(requireCompany(), payload),
+    remove: (id: string) => api.data.suppliers.remove(requireCompany(), id),
+  },
+  cleaningPlan: {
+    list: () => api.data.cleaningPlan.list(requireCompany()),
+    upsert: (payload: CleaningPlanItemPayload) =>
+      api.data.cleaningPlan.upsert(requireCompany(), payload),
+    remove: (id: string) => api.data.cleaningPlan.remove(requireCompany(), id),
+  },
+  locations: {
+    list: () => api.data.locations.list(requireCompany()),
+    upsert: (payload: LocationPayload) => api.data.locations.upsert(requireCompany(), payload),
+    remove: (id: string) => api.data.locations.remove(requireCompany(), id),
   },
   labelOcr: {
     analyze: (payload: { imageBase64: string; mimeType: string }) =>

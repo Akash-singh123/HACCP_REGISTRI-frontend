@@ -1,10 +1,11 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import type { HaccpRecord, CompanyInfo } from '@/types/haccp';
+import type { HaccpRecord } from '@/types/haccp';
 
 // saveRecord/getRecords orchestrano API, coda offline e firma OSA:
 // qui sono tutti sostituiti da stub per verificare la sola logica di orchestrazione.
 vi.mock('@/lib/api', () => {
   let active: string | null = null;
+  let activeLocation: string | null = null;
   class ApiError extends Error {
     status: number;
     code?: string;
@@ -20,6 +21,10 @@ vi.mock('@/lib/api', () => {
     getActiveCompany: () => active,
     setActiveCompany: (id: string | null) => {
       active = id;
+    },
+    getActiveLocation: () => activeLocation,
+    setActiveLocation: (id: string | null) => {
+      activeLocation = id;
     },
     activeData: {
       records: {
@@ -52,7 +57,6 @@ import { enqueueRecord, getPendingRecords, removePendingRecord } from '@/lib/off
 import { deleteRecordByDate, getRecords, saveRecord } from '@/lib/haccpUtils';
 import type { PendingRecord } from '@/lib/offlineQueue';
 
-const COMPANY: CompanyInfo = { name: 'Trattoria Test', piva: '01234567890' };
 const upsert = vi.mocked(activeData.records.upsert);
 const list = vi.mocked(activeData.records.list);
 const deleteByDate = vi.mocked(activeData.records.deleteByDate);
@@ -72,8 +76,9 @@ const record = (date: string, temp = 2): HaccpRecord => ({
 });
 
 const pendingFor = (date: string, temp = 9): PendingRecord => ({
-  key: `co::${date}`,
+  key: `co::::${date}`,
   companyId: 'co',
+  locationId: '',
   date,
   payload: {
     date,
@@ -176,6 +181,6 @@ describe('deleteRecordByDate', () => {
     await deleteRecordByDate('2025-01-02');
 
     expect(deleteByDate).toHaveBeenCalledWith('2025-01-02');
-    expect(removePending).toHaveBeenCalledWith('co', '2025-01-02');
+    expect(removePending).toHaveBeenCalledWith('co', '2025-01-02', '');
   });
 });

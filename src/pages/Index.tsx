@@ -15,45 +15,62 @@ import { api } from '@/lib/api';
 import { useAuth } from '@/hooks/useAuth';
 import {
   Archive,
+  BookOpen,
   Bug,
   Building2,
   ChefHat,
   ClipboardList,
   Clock,
   CreditCard,
+  FileStack,
   FolderOpen,
   Gauge,
   Loader2,
   LogOut,
+  MapPin,
   PackagePlus,
   Printer,
+  Route,
   Settings,
   ShieldAlert,
   Signature,
+  Snowflake,
+  Sparkles,
   TrendingUp,
+  Users,
   Zap,
   type LucideIcon,
 } from 'lucide-react';
 const Semilavorati = lazy(() => import('@/components/Semilavorati'));
 const Cruscotto = lazy(() => import('@/components/Cruscotto'));
 const IncomingFoods = lazy(() => import('@/components/IncomingFoods'));
+const Fornitori = lazy(() => import('@/components/Fornitori'));
+const Abbattimenti = lazy(() => import('@/components/Abbattimenti'));
+const PianoSanificazione = lazy(() => import('@/components/PianoSanificazione'));
 const OsaSignature = lazy(() => import('@/components/OsaSignature'));
 const Allergeni = lazy(() => import('@/components/Allergeni'));
+const Tracciabilita = lazy(() => import('@/components/Tracciabilita'));
+const PacchettoIspezione = lazy(() => import('@/components/PacchettoIspezione'));
+const ManualeAutocontrollo = lazy(() => import('@/components/ManualeAutocontrollo'));
 const Billing = lazy(() => import('@/components/Billing'));
 const PrinterManager = lazy(() => import('@/components/printing/PrinterManager'));
 const PestControl = lazy(() => import('@/components/pest/PestControl'));
+const Squadra = lazy(() => import('@/components/Squadra'));
+const Sedi = lazy(() => import('@/components/Sedi'));
 import { PushSettingsRow, PwaInstallBanner } from '@/components/Pwa';
 import { OfflineSyncBanner } from '@/components/OfflineSyncBanner';
 import { NotificationCenter } from '@/components/NotificationCenter';
 import { ExpiryRulesSettings } from '@/components/ExpiryRulesSettings';
 import { CategoryGrid } from '@/components/CategoryGrid';
+import { LocationSelect } from '@/components/LocationSelect';
 import { DashboardSidebar, type SidebarGroup } from '@/components/DashboardSidebar';
+import { useLocationsStore } from '@/store/locationsStore';
 import { AREA } from '@/lib/areaIdentity';
 import { startAutoRegisterScheduler } from '@/lib/autoRegisters';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 
-type TabKey = 'cruscotto' | 'daily' | 'auto' | 'archive' | 'ingresso' | 'cloud' | 'semilavorati' | 'firma-osa' | 'allergeni' | 'infestanti' | 'stampanti' | 'abbonamento';
+type TabKey = 'cruscotto' | 'daily' | 'auto' | 'archive' | 'ingresso' | 'fornitori' | 'sanificazione' | 'cloud' | 'semilavorati' | 'abbattimenti' | 'firma-osa' | 'allergeni' | 'tracciabilita' | 'ispezione' | 'manuale' | 'infestanti' | 'sedi' | 'stampanti' | 'squadra' | 'abbonamento';
 
 type TabGroup = 'operativo' | 'gestione' | 'archivio' | 'sistema';
 
@@ -82,12 +99,20 @@ const NAV_ITEMS: NavItem[] = [
   { key: 'daily', label: 'Compilazione Giornaliera', short: 'Compila', description: 'Annota temperatura e sanificazione di oggi.', icon: ClipboardList, group: 'operativo', accent: AREA.temperature },
   { key: 'firma-osa', label: 'Firma OSA', short: 'Firma OSA', description: "Apponi la firma dell'operatore OSA.", icon: Signature, group: 'operativo', accent: AREA.sanificazione },
   { key: 'ingresso', label: 'Alimenti in Ingresso', short: 'Ingresso', description: 'Registra gli alimenti con lotto, fornitore e scadenza.', icon: PackagePlus, group: 'gestione', accent: AREA.traceability },
+  { key: 'fornitori', label: 'Anagrafica Fornitori', short: 'Fornitori', description: 'Fornitori con contatti e referenti per la tracciabilità di filiera.', icon: Building2, group: 'gestione', accent: AREA.traceability },
   { key: 'semilavorati', label: 'Prodotti Semilavorati', short: 'Semilavorati', description: 'Prodotti, categorie e lotti di produzione.', icon: ChefHat, group: 'gestione', accent: AREA.semilavorati },
+  { key: 'abbattimenti', label: 'Abbattimenti Termici', short: 'Abbattimenti', description: 'Registro del raffreddamento rapido con esito di conformità.', icon: Snowflake, group: 'gestione', accent: AREA.temperature },
+  { key: 'sanificazione', label: 'Piano di Sanificazione', short: 'Sanificazione', description: 'Attività di pulizia e sanificazione con frequenze e checklist.', icon: Sparkles, group: 'gestione', accent: AREA.sanificazione },
   { key: 'allergeni', label: 'Tabella Allergeni', short: 'Allergeni', description: 'Tabella allergeni per prodotto, pronta da stampare.', icon: ShieldAlert, group: 'gestione', accent: AREA.allergeni },
+  { key: 'tracciabilita', label: 'Tracciabilità a Ritroso', short: 'Tracciabilità', description: 'Rintraccia un lotto o ingrediente in tutte le sedi e ricostruisci i movimenti.', icon: Route, group: 'gestione', accent: AREA.traceability },
+  { key: 'ispezione', label: 'Pacchetto Ispezione ASL', short: 'Ispezione', description: 'Fascicolo PDF con registri, tracciabilità, allergeni e infestanti per il controllo ASL.', icon: FileStack, group: 'gestione', accent: AREA.documenti },
+  { key: 'manuale', label: 'Manuale di Autocontrollo', short: 'Manuale', description: 'Genera il piano di autocontrollo personalizzabile con i dati reali dell\'azienda.', icon: BookOpen, group: 'gestione', accent: AREA.documenti },
   { key: 'infestanti', label: 'Controllo Infestanti', short: 'Infestanti', description: 'Monitoraggio, postazioni e interventi di disinfestazione.', icon: Bug, group: 'gestione', accent: AREA.pest },
   { key: 'archive', label: 'Archivio e Consultazione', short: 'Archivio', description: 'Consulta e scarica i registri per mese e semestre.', icon: Archive, group: 'archivio', accent: AREA.haccp },
   { key: 'cloud', label: 'Archivio Documenti', short: 'Documenti', description: 'Tutti i documenti PDF archiviati nel cloud.', icon: FolderOpen, group: 'archivio', accent: AREA.documenti },
   { key: 'stampanti', label: 'Stampanti ed Etichette', short: 'Stampanti', description: 'Collega le stampanti e configura i formati.', icon: Printer, group: 'sistema', accent: AREA.sistema },
+  { key: 'sedi', label: 'Sedi Aziendali', short: 'Sedi', description: 'Gestisci le sedi: registri e abbattimenti separati per sede.', icon: MapPin, group: 'sistema', accent: AREA.sistema },
+  { key: 'squadra', label: 'Utenti e Inviti', short: 'Utenti', description: 'Collaboratori, ruoli e inviti via email.', icon: Users, group: 'sistema', accent: AREA.sistema },
   { key: 'abbonamento', label: 'Abbonamento', short: 'Piano', description: 'Stato del piano e gestione del pagamento.', icon: CreditCard, group: 'sistema', accent: AREA.sistema },
 ];
 
@@ -125,6 +150,8 @@ export default function HaccpDashboard() {
   // Barra di navigazione mobile: contenitore scorrevole e voce attiva da portare in vista.
   const mobileNavRef = useRef<HTMLDivElement>(null);
   const activeNavRef = useRef<HTMLButtonElement>(null);
+  const loadLocations = useLocationsStore((s) => s.load);
+  const activeLocationId = useLocationsStore((s) => s.activeId);
 
   // Info azienda per i componenti (nome, P.IVA, indirizzo) derivate dal tenant attivo.
   const companyInfo: CompanyInfo = useMemo(() => {
@@ -203,7 +230,14 @@ export default function HaccpDashboard() {
     return () => {
       cancelled = true;
     };
-  }, [refreshTrigger]);
+  }, [refreshTrigger, activeLocationId]);
+
+  // Sedi dell'azienda: caricate all'avvio per stabilire la sede attiva di
+  // contesto, condivisa da registri HACCP, abbattimenti e archivio.
+  useEffect(() => {
+    if (!authCompany) return;
+    void loadLocations();
+  }, [loadLocations, authCompany?.id]);
 
   // Avvio scheduler automatico registri HACCP (Temperature e Sanificazione)
   useEffect(() => {
@@ -369,18 +403,48 @@ export default function HaccpDashboard() {
         return <RecordsList company={companyInfo} refreshTrigger={refreshTrigger} />;
       case 'ingresso':
         return <IncomingFoods focusId={focusTarget?.id ?? null} focusNonce={focusTarget?.nonce ?? 0} />;
+      case 'fornitori':
+        return <Fornitori />;
       case 'cloud':
         return <DocumentsArchive />;
       case 'semilavorati':
         return <Semilavorati focusId={focusTarget?.id ?? null} focusNonce={focusTarget?.nonce ?? 0} />;
+      case 'abbattimenti':
+        return <Abbattimenti />;
+      case 'sanificazione':
+        return <PianoSanificazione />;
       case 'firma-osa':
         return <OsaSignature />;
       case 'allergeni':
         return <Allergeni />;
+      case 'tracciabilita':
+        return <Tracciabilita />;
+      case 'ispezione':
+        return (
+          <PacchettoIspezione
+            companyId={authCompany?.id ?? null}
+            company={companyInfo}
+            logoUrl={logoUrl}
+          />
+        );
+      case 'manuale':
+        return (
+          <ManualeAutocontrollo
+            companyId={authCompany?.id ?? null}
+            company={companyInfo}
+            logoUrl={logoUrl}
+            settings={authCompany?.settings ?? null}
+            onSaved={refreshCompany}
+          />
+        );
       case 'infestanti':
         return <PestControl initialToken={pestToken} onTokenConsumed={() => setPestToken(null)} />;
       case 'stampanti':
         return <PrinterManager />;
+      case 'sedi':
+        return <Sedi />;
+      case 'squadra':
+        return <Squadra />;
       case 'abbonamento':
         return <Billing />;
       default:
@@ -475,12 +539,15 @@ export default function HaccpDashboard() {
               <p className="mt-0.5 text-sm text-muted-foreground">{activeItem.description}</p>
             </div>
           </div>
-          {isPlatformAdmin && (
-            <Badge variant="secondary" className="gap-1.5">
-              <Zap className="h-3 w-3" />
-              Modalità gestore
-            </Badge>
-          )}
+          <div className="flex flex-wrap items-center gap-3">
+            <LocationSelect />
+            {isPlatformAdmin && (
+              <Badge variant="secondary" className="gap-1.5">
+                <Zap className="h-3 w-3" />
+                Modalità gestore
+              </Badge>
+            )}
+          </div>
         </div>
 
         {/* Impostazioni azienda */}

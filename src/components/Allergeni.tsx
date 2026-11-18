@@ -6,6 +6,7 @@ import {
   AllergenId,
   encodeProductsToUrl
 } from '@/store/allergenProductsStore';
+import { useLocationsStore } from '@/store/locationsStore';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -54,6 +55,9 @@ export default function Allergeni() {
   const { products, addProduct, updateProduct, removeProduct, fetchProducts, setCompany, companyId } =
     useAllergenProductsStore();
   const { company } = useAuth();
+  // Sede attiva: le schede allergeni sono filtrate per sede, quindi al cambio
+  // sede l'elenco viene ricaricato.
+  const activeLocationId = useLocationsStore((s) => s.activeId);
   const { confirm, confirmDialog } = useConfirm();
   const [formNome, setFormNome] = useState('');
   const [formDescrizione, setFormDescrizione] = useState('');
@@ -77,7 +81,7 @@ export default function Allergeni() {
     if (companyId) {
       fetchProducts().catch(() => toast.error('Impossibile caricare i prodotti dal server'));
     }
-  }, [companyId, fetchProducts]);
+  }, [companyId, fetchProducts, activeLocationId]);
 
   const resetForm = () => {
     setFormNome('');

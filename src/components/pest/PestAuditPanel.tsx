@@ -4,7 +4,8 @@
 // "pest-control"; le registrazioni non sono modificabili.
 
 import { useEffect, useMemo, useState } from 'react';
-import { api, ApiError, type PestAuditEntry } from '@/lib/api';
+import { ApiError, type PestAuditEntry } from '@/lib/api';
+import { usePestAudit } from '@/hooks/useHaccpQueries';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -82,29 +83,24 @@ function formatDateTime(iso: string): string {
   });
 }
 
+const EMPTY_ENTRIES: PestAuditEntry[] = [];
+
 export function PestAuditPanel({ companyId }: Props) {
-  const [entries, setEntries] = useState<PestAuditEntry[]>([]);
-  const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [entity, setEntity] = useState('all');
   const [verb, setVerb] = useState('all');
 
-  const load = async () => {
-    setLoading(true);
-    try {
-      const { items } = await api.pest.audit(companyId, 200);
-      setEntries(items);
-    } catch (err) {
-      toast.error(err instanceof ApiError ? err.message : 'Impossibile caricare lo storico');
-    } finally {
-      setLoading(false);
-    }
-  };
+  // Storico modifiche via React Query: stessa cache condivisa del modulo.
+  const auditQuery = usePestAudit(companyId, 200);
+  const entries = auditQuery.data ?? EMPTY_ENTRIES;
+  const loading = auditQuery.isPending;
 
+  // Errore di lettura: mantiene il feedback che c'era con il caricamento manuale.
   useEffect(() => {
-    void load();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [companyId]);
+    if (!auditQuery.isError) return;
+    const err = auditQuery.error;
+    toast.error(err instanceof ApiError ? err.message : 'Impossibile caricare lo storico');
+  }, [auditQuery.isError, auditQuery.error]);
 
   const rows = useMemo(() => entries.map((entry) => ({ entry, parsed: parseAction(entry.action) })), [entries]);
 
@@ -145,8 +141,8 @@ export function PestAuditPanel({ companyId }: Props) {
                 </CardDescription>
               </div>
             </div>
-            <Button variant="ghost" size="icon" className="h-11 w-11 sm:h-10 sm:w-10" onClick={() => void load()} title="Aggiorna">
-              {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+            <Button variant="ghost" size="icon" className="h-11 w-11 sm:h-10 sm:w-10" onClick={() => void auditQuery.refetch()} title="Aggiorna">
+              {auditQuery.isFetching ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
             </Button>
           </div>
         </CardHeader>

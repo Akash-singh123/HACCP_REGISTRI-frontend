@@ -3,7 +3,8 @@
 // Elenca le anomalie con priorità e stato, apre il dettaglio e consente di
 // gestire le azioni correttive collegate. La chiusura richiede l'esito della verifica.
 
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import {
   api,
   ApiError,
@@ -13,6 +14,8 @@ import {
   type PestInspection,
   type PestStation,
 } from '@/lib/api';
+import { usePestList } from '@/hooks/useHaccpQueries';
+import { queryKeys } from '@/lib/queryKeys';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -76,12 +79,6 @@ interface ActionFormState {
   completed_at: string;
   verification_notes: string;
   verified_at: string;
-}
-
-function nowLocal(): string {
-  const d = new Date();
-  d.setMinutes(d.getMinutes() - d.getTimezoneOffset());
-  return d.toISOString().slice(0, 16);
 }
 
 function toLocalInput(iso: string | null | undefined): string {
@@ -567,14 +564,16 @@ function PestAnomalyDetailDialog({
 
 // ── Pannello anomalie ──────────────────────────────────────────────────────
 
+// Array vuoti con identità stabile a livello di modulo.
+const EMPTY_ANOMALIES: PestAnomaly[] = [];
+const EMPTY_ACTIONS: PestCorrectiveAction[] = [];
+const EMPTY_AREAS: PestArea[] = [];
+const EMPTY_STATIONS: PestStation[] = [];
+const EMPTY_INSPECTIONS: PestInspection[] = [];
+
 export function PestAnomaliesPanel({ companyId }: Props) {
   const { confirm, confirmDialog } = useConfirm();
-  const [anomalies, setAnomalies] = useState<PestAnomaly[]>([]);
-  const [actions, setActions] = useState<PestCorrectiveAction[]>([]);
-  const [areas, setAreas] = useState<PestArea[]>([]);
-  const [stations, setStations] = useState<PestStation[]>([]);
-  const [inspections, setInspections] = useState<PestInspection[]>([]);
-  const [loading, setLoading] = useState(true);
+  const queryClient = useQueryClient();
 
   const [statusFilter, setStatusFilter] = useState('all');
   const [priorityFilter, setPriorityFilter] = useState('all');
@@ -583,31 +582,71 @@ export function PestAnomaliesPanel({ companyId }: Props) {
   const [editItem, setEditItem] = useState<PestAnomaly | null>(null);
   const [detailId, setDetailId] = useState<string | null>(null);
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    try {
-      const [anRes, acRes, arRes, stRes, inRes] = await Promise.all([
-        api.pest.list<PestAnomaly>(companyId, 'anomalies'),
-        api.pest.list<PestCorrectiveAction>(companyId, 'correctiveActions'),
-        api.pest.list<PestArea>(companyId, 'areas'),
-        api.pest.list<PestStation>(companyId, 'stations'),
-        api.pest.list<PestInspection>(companyId, 'inspections'),
-      ]);
-      setAnomalies(anRes.items);
-      setActions(acRes.items);
-      setAreas(arRes.items);
-      setStations(stRes.items);
-      setInspections(inRes.items);
-    } catch (err) {
-      toast.error(err instanceof ApiError ? err.message : 'Impossibile caricare le anomalie');
-    } finally {
-      setLoading(false);
-    }
-  }, [companyId]);
+  // Letture del modulo via React Query: stessa cache condivisa con gli altri pannelli.
+  const anomaliesQuery = usePestList<PestAnomaly>(companyId, 'anomalies');
+  const actionsQuery = usePestList<PestCorrectiveAction>(companyId, 'correctiveActions');
+  const areasQuery = usePestList<PestArea>(companyId, 'areas');
+  const stationsQuery = usePestList<PestStation>(companyId, 'stations');
+  const inspectionsQuery = usePestList<PestInspection>(companyId, 'inspections');
 
+  const anomalies = anomaliesQuery.data ?? EMPTY_ANOMALIES;
+  const actions = actionsQuery.data ?? EMPTY_ACTIONS;
+  const areas = areasQuery.data ?? EMPTY_AREAS;
+  const stations = stationsQuery.data ?? EMPTY_STATIONS;
+  const inspections = inspectionsQuery.data ?? EMPTY_INSPECTIONS;
+
+  // Skeleton finché i dati iniziali non sono pronti (stessa semantica del load manuale).
+  const loading =
+    anomaliesQuery.isPending ||
+    actionsQuery.isPending ||
+    areasQuery.isPending ||
+    stationsQuery.isPending ||
+    inspectionsQuery.isPending;
+  const refreshing =
+    anomaliesQuery.isFetching ||
+    actionsQuery.isFetching ||
+    areasQuery.isFetching ||
+    stationsQuery.isFetching ||
+    inspectionsQuery.isFetching;
+
+  // Aggiornamento ottimistico della cache dopo una scrittura riuscita.
+  const setAnomalies = (updater: (prev: PestAnomaly[]) => PestAnomaly[]) =>
+    queryClient.setQueryData<PestAnomaly[]>(queryKeys.pest.list(companyId, 'anomalies'), (prev) => updater(prev ?? []));
+  const setActions = (updater: (prev: PestCorrectiveAction[]) => PestCorrectiveAction[]) =>
+    queryClient.setQueryData<PestCorrectiveAction[]>(queryKeys.pest.list(companyId, 'correctiveActions'), (prev) =>
+      updater(prev ?? []),
+    );
+
+  // Errore di lettura: mantiene il feedback che c'era con il caricamento manuale.
   useEffect(() => {
-    void load();
-  }, [load]);
+    if (
+      !anomaliesQuery.isError &&
+      !actionsQuery.isError &&
+      !areasQuery.isError &&
+      !stationsQuery.isError &&
+      !inspectionsQuery.isError
+    ) {
+      return;
+    }
+    const err =
+      anomaliesQuery.error ??
+      actionsQuery.error ??
+      areasQuery.error ??
+      stationsQuery.error ??
+      inspectionsQuery.error;
+    toast.error(err instanceof ApiError ? err.message : 'Impossibile caricare le anomalie');
+  }, [
+    anomaliesQuery.isError,
+    anomaliesQuery.error,
+    actionsQuery.isError,
+    actionsQuery.error,
+    areasQuery.isError,
+    areasQuery.error,
+    stationsQuery.isError,
+    stationsQuery.error,
+    inspectionsQuery.isError,
+    inspectionsQuery.error,
+  ]);
 
   const rows = useMemo(() => {
     return anomalies
@@ -691,8 +730,22 @@ export function PestAnomaliesPanel({ companyId }: Props) {
               </div>
             </div>
             <div className="flex flex-wrap gap-2">
-              <Button variant="ghost" size="icon" className="h-11 w-11 sm:h-10 sm:w-10" onClick={() => void load()} title="Aggiorna">
-                {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-11 w-11 sm:h-10 sm:w-10"
+                onClick={() =>
+                  void Promise.all([
+                    anomaliesQuery.refetch(),
+                    actionsQuery.refetch(),
+                    areasQuery.refetch(),
+                    stationsQuery.refetch(),
+                    inspectionsQuery.refetch(),
+                  ])
+                }
+                title="Aggiorna"
+              >
+                {refreshing ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
               </Button>
               <Button onClick={openCreate}>
                 <Plus className="mr-2 h-4 w-4" /> Nuova anomalia
