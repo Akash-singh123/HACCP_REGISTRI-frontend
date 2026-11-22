@@ -24,6 +24,7 @@ import type {
   StockStatus,
   SupplierPayload,
 } from './api';
+import type { SemiProductTemplate } from './schemas';
 
 const DB_NAME = 'alimex-offline';
 const DB_VERSION = 2;
@@ -227,6 +228,7 @@ export type MutationKind =
   | 'incoming.delete'
   | 'semi.batch.upsert'
   | 'semi.batch.update'
+  | 'semi.templates.save'
   | 'blast.upsert'
   | 'blast.delete'
   | 'supplier.upsert'
@@ -243,6 +245,9 @@ export interface MutationPayloads {
   'incoming.delete': { id: string };
   'semi.batch.upsert': SemiProductBatchPayload;
   'semi.batch.update': SemiProductBatchPatch;
+  // I modelli (prodotti + categorie) vengono salvati come documento unico:
+  // l'upsert è idempotente e l'ultimo salvataggio vince.
+  'semi.templates.save': { templates: SemiProductTemplate[]; categories: string[] };
   'blast.upsert': BlastChillingPayload;
   'blast.delete': { id: string };
   'supplier.upsert': SupplierPayload;
@@ -296,6 +301,10 @@ function entityKeyFor(kind: MutationKind, payload: MutationPayloads[MutationKind
       const location = String(batch.locationId ?? '');
       return location ? `${location}::${lot}` : lot;
     }
+    case 'semi.templates.save':
+      // Documento unico per azienda: i salvataggi successivi si sostituiscono
+      // in coda (vince l'ultimo), evitando di accumulare snapshot obsoleti.
+      return 'templates';
     default:
       return String((payload as { id?: string }).id ?? '');
   }

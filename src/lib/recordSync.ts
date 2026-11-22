@@ -184,6 +184,9 @@ async function executeMutation(mutation: PendingMutation): Promise<{ id: string 
       const res = await activeData.semi.batches.update(mutation.payload as MutationPayloads['semi.batch.update']);
       return { id: res.item.id };
     }
+    case 'semi.templates.save':
+      await activeData.semi.save(mutation.payload as MutationPayloads['semi.templates.save']);
+      return null;
     case 'blast.upsert': {
       const res = await activeData.blast.upsert(mutation.payload as MutationPayloads['blast.upsert']);
       return { id: res.item.id };

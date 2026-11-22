@@ -65,8 +65,57 @@ const DEFAULT_TEMPLATES: SemiProductTemplate[] = [
 const DEFAULT_CATEGORIES: string[] = ['Non assegnato', 'Antipasti', 'Salse', 'Impasti', 'Curry', 'Dolci'];
 
 export const useSemiProductsStore = create<SemiProductsState>((set, get) => {
-  const persist = (templates: SemiProductTemplate[], categories: string[]) =>
-    activeData.semi.save({ templates, categories }).then(() => undefined);
+  /**
+   * Salvataggi in corso. Se una lettura (`load`) termina mentre un salvataggio
+   * è ancora in volo, lo snapshot letto potrebbe essere precedente alla
+   * modifica locale: in quel caso non va applicato, altrimenti il prodotto
+   * appena creato "sparirebbe" dall'interfaccia.
+   */
+  let pendingSaves = 0;
+
+  /**
+   * Salva la lista dei modelli. In caso di errore di rete la modifica viene
+   * accodata (sincronizzata al ritorno della connessione); per ogni altro
+   * errore l'eccezione viene propagata, così il chiamante può annullare la
+   * modifica ottimistica e segnalare il fallimento all'utente.
+   */
+  const saveOrQueue = async (templates: SemiProductTemplate[], categories: string[]) => {
+    try {
+      await activeData.semi.save({ templates, categories });
+    } catch (err) {
+      if (isOfflineError(err)) {
+        await queueMutation('semi.templates.save', { templates, categories });
+        return;
+      }
+      throw err;
+    }
+  };
+
+  /**
+   * Applica una modifica ottimistica allo stato (prodotti e categorie) e la
+   * persiste. Se il salvataggio fallisce in modo definitivo (non offline) lo
+   * stato viene ripristinato e l'eccezione rilanciata: niente più modifiche
+   * "fantasma" che sembrano salvate ma svaniscono al successivo ricaricamento.
+   */
+  const apply = async (
+    mutate: (state: { templates: SemiProductTemplate[]; categories: string[] }) => {
+      templates: SemiProductTemplate[];
+      categories: string[];
+    }
+  ) => {
+    const previous = { templates: get().templates, categories: get().categories };
+    const next = mutate(previous);
+    set({ templates: next.templates, categories: next.categories });
+    pendingSaves += 1;
+    try {
+      await saveOrQueue(next.templates, next.categories);
+    } catch (err) {
+      set(previous);
+      throw err;
+    } finally {
+      pendingSaves -= 1;
+    }
+  };
 
   return {
     templates: DEFAULT_TEMPLATES,
@@ -163,18 +212,26 @@ export const useSemiProductsStore = create<SemiProductsState>((set, get) => {
     load: async () => {
       // La risposta è già validata e normalizzata dal layer API (schema Zod):
       // qui restano solo le regole di presentazione — categoria di fallback per
-      // i template storici e "Non assegnato" sempre presente. In caso di errore
-      // (rete o payload non valido, già segnalato all'osservabilità) la vista
-      // parte dai valori predefiniti.
-      let templates: SemiProductTemplate[] = [];
-      let categories: string[] = [];
+      // i template storici e "Non assegnato" sempre presente.
+      let templates: SemiProductTemplate[];
+      let categories: string[];
       try {
         const res = await activeData.semi.get();
         templates = res.templates;
         categories = res.categories;
       } catch {
-        /* fallback ai default più sotto */
+        // Lettura fallita (rete o payload non valido): NON sovrascrivere lo
+        // stato locale con i valori predefiniti, altrimenti i modelli già
+        // mostrati all'utente verrebbero sostituiti da prodotti fittizi.
+        if (!get().loaded) set({ loaded: true });
+        return;
       }
+      // Se un salvataggio è appena partito, lo snapshot letto può essere più
+      // vecchio della modifica locale: non applicarlo (evita di far sparire
+      // dall'interfaccia un prodotto appena creato).
+      if (pendingSaves > 0) return;
+      // Lettura riuscita: un elenco vuoto è uno stato reale (l'azienda non ha
+      // ancora salvato nulla) e mostra la composizione di esempio.
       const loadedTemplates = templates.length > 0
         ? templates.map(t => (t.categoria ? t : { ...t, categoria: 'Non assegnato' }))
         : DEFAULT_TEMPLATES;
@@ -184,46 +241,35 @@ export const useSemiProductsStore = create<SemiProductsState>((set, get) => {
         : ['Non assegnato', ...loadedCategories];
       set({ templates: loadedTemplates, categories: nextCategories, loaded: true });
     },
-    addTemplate: async (template) => {
-      const next = [...get().templates, template];
-      set({ templates: next });
-      await persist(next, get().categories);
-    },
-    removeTemplate: async (nome) => {
-      const next = get().templates.filter(t => t.nome !== nome);
-      set({ templates: next });
-      await persist(next, get().categories);
-    },
-    removeIngredient: async (templateNome, index) => {
-      const next = get().templates.map(t => {
+    addTemplate: (template) => apply((s) => ({ ...s, templates: [...s.templates, template] })),
+    removeTemplate: (nome) => apply((s) => ({
+      ...s,
+      templates: s.templates.filter(t => t.nome !== nome),
+    })),
+    removeIngredient: (templateNome, index) => apply((s) => ({
+      ...s,
+      templates: s.templates.map(t => {
         if (t.nome !== templateNome) return t;
         const ing = [...t.ingredienti];
         if (index >= 0 && index < ing.length) ing.splice(index, 1);
         return { ...t, ingredienti: ing };
-      });
-      set({ templates: next });
-      await persist(next, get().categories);
-    },
-    addIngredient: async (templateNome, ingredient) => {
-      const next = get().templates.map(t => (
+      }),
+    })),
+    addIngredient: (templateNome, ingredient) => apply((s) => ({
+      ...s,
+      templates: s.templates.map(t => (
         t.nome === templateNome ? { ...t, ingredienti: [...t.ingredienti, ingredient] } : t
-      ));
-      set({ templates: next });
-      await persist(next, get().categories);
-    },
-    updateTemplate: async (nome, changes) => {
-      const next = get().templates.map(t => (t.nome === nome ? { ...t, ...changes } : t));
-      set({ templates: next });
-      await persist(next, get().categories);
-    },
+      )),
+    })),
+    updateTemplate: (nome, changes) => apply((s) => ({
+      ...s,
+      templates: s.templates.map(t => (t.nome === nome ? { ...t, ...changes } : t)),
+    })),
     addCategory: async (name) => {
       const trimmed = name.trim();
       if (!trimmed) return;
-      const cats = get().categories;
-      if (cats.includes(trimmed)) return;
-      const next = [...cats, trimmed];
-      set({ categories: next });
-      await persist(get().templates, next);
+      if (get().categories.includes(trimmed)) return;
+      await apply((s) => ({ ...s, categories: [...s.categories, trimmed] }));
     },
     renameCategory: async (oldName, newName) => {
       const trimmed = newName.trim();
@@ -231,24 +277,23 @@ export const useSemiProductsStore = create<SemiProductsState>((set, get) => {
       const cats = get().categories;
       const idx = cats.indexOf(oldName);
       if (idx === -1) return;
-      const nextCats = [...cats];
-      nextCats[idx] = trimmed;
-      // Aggiorna anche i template che usavano la vecchia categoria
-      const nextTemplates = get().templates.map(t => (
-        t.categoria === oldName ? { ...t, categoria: trimmed } : t
-      ));
-      set({ categories: nextCats, templates: nextTemplates });
-      await persist(nextTemplates, nextCats);
+      await apply((s) => {
+        const nextCats = [...s.categories];
+        nextCats[idx] = trimmed;
+        // Aggiorna anche i template che usavano la vecchia categoria
+        const nextTemplates = s.templates.map(t => (
+          t.categoria === oldName ? { ...t, categoria: trimmed } : t
+        ));
+        return { templates: nextTemplates, categories: nextCats };
+      });
     },
-    removeCategory: async (name) => {
-      const cats = get().categories.filter(c => c !== name);
+    removeCategory: (name) => apply((s) => ({
+      categories: s.categories.filter(c => c !== name),
       // Rimuovi la categoria dai template che la usavano
-      const nextTemplates = get().templates.map(t => (
+      templates: s.templates.map(t => (
         t.categoria === name ? { ...t, categoria: undefined } : t
-      ));
-      set({ categories: cats, templates: nextTemplates });
-      await persist(nextTemplates, cats);
-    },
+      )),
+    })),
   };
 });
 

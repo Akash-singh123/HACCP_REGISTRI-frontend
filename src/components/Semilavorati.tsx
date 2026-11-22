@@ -222,6 +222,23 @@ export default function Semilavorati({
   // Carica le stampanti configurate (per "Salva e stampa etichetta").
   useEffect(() => { if (!printersLoaded) void loadPrinters(); }, [printersLoaded, loadPrinters]);
 
+  /**
+   * Esegue una modifica ai modelli semilavorati (prodotti e categorie) e ne
+   * segnala l'esito. Lo store annulla già la modifica in caso di fallimento
+   * definitivo: qui si evita il toast di successo quando il salvataggio non
+   * riesce, così l'utente non crede di aver salvato qualcosa che poi sparisce.
+   */
+  const persistModel = async (fn: () => Promise<void>, successMessage?: string): Promise<boolean> => {
+    try {
+      await fn();
+      if (successMessage) toast.success(successMessage);
+      return true;
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Salvataggio non riuscito');
+      return false;
+    }
+  };
+
   const selectedTemplate = useMemo(() => templates.find((t) => t.nome === selectedProduct) || null, [templates, selectedProduct]);
   const filteredTemplates = useMemo(() => {
     if (!selectedCategory) return templates;
@@ -746,17 +763,17 @@ export default function Semilavorati({
   });
   const addFields = useFieldArray({ control: addForm.control, name: 'ingredienti' });
 
-  const addTemplateSubmit = addForm.handleSubmit((vals) => {
+  const addTemplateSubmit = addForm.handleSubmit(async (vals) => {
     if (!vals.nome.trim()) return toast.error('Inserisci il nome del prodotto');
     const cleaned = vals.ingredienti.map((i) => ({ nome: i.nome.trim() })).filter((i) => i.nome);
     if (!cleaned.length) return toast.error('Aggiungi almeno un ingrediente');
-    addTemplate({
+    const ok = await persistModel(() => addTemplate({
       nome: vals.nome.trim(),
       categoria: vals.categoria?.trim() || undefined,
       note: vals.note?.trim() || undefined,
       ingredienti: cleaned,
-    });
-    toast.success('Prodotto semilavorato aggiunto');
+    }), 'Prodotto semilavorato aggiunto');
+    if (!ok) return;
     setShowAddDialog(false);
     addForm.reset({ nome: '', categoria: selectedCategory || '', note: '', ingredienti: [{ nome: '' }] });
   });
@@ -789,13 +806,13 @@ export default function Semilavorati({
       title: `Eliminare "${nome}"?`,
       description: 'Il prodotto e la sua composizione verranno rimossi definitivamente. Questa azione non può essere annullata.',
       confirmLabel: 'Elimina prodotto',
-      onConfirm: () => {
-        removeTemplate(nome);
+      onConfirm: async () => {
+        const ok = await persistModel(() => removeTemplate(nome), 'Prodotto eliminato');
+        if (!ok) return;
         if (selectedProduct === nome) {
           setSelectedProduct('');
           replace([]);
         }
-        toast.success('Prodotto eliminato');
       },
     });
   };
@@ -809,19 +826,20 @@ export default function Semilavorati({
       title: `Rimuovere "${nome}" dalla composizione?`,
       description: 'La modifica vale per tutte le future registrazioni di questo prodotto.',
       confirmLabel: 'Rimuovi ingrediente',
-      onConfirm: () => removeIngredient(tpl.nome, idx),
+      onConfirm: async () => {
+        await persistModel(() => removeIngredient(tpl.nome, idx), 'Ingrediente rimosso dalla composizione');
+      },
     });
   };
 
   const [newIngredientName, setNewIngredientName] = useState('');
-  const handleAddIngredientToTemplate = () => {
+  const handleAddIngredientToTemplate = async () => {
     const tpl = templates.find((t) => t.nome === selectedProduct);
     if (!tpl) return;
     const name = newIngredientName.trim();
     if (!name) return toast.error('Inserisci il nome dell’ingrediente');
-    addIngredient(tpl.nome, { nome: name });
-    setNewIngredientName('');
-    toast.success('Ingrediente aggiunto alla composizione');
+    const ok = await persistModel(() => addIngredient(tpl.nome, { nome: name }), 'Ingrediente aggiunto alla composizione');
+    if (ok) setNewIngredientName('');
   };
 
   // Editing template (nome, categoria, note)
@@ -835,17 +853,17 @@ export default function Semilavorati({
     }
   }, [showEditDialog, templates, editForm]);
 
-  const handleEditSubmit = editForm.handleSubmit((vals) => {
+  const handleEditSubmit = editForm.handleSubmit(async (vals) => {
     const original = showEditDialog.nome!;
     const changes = {
       nome: vals.nome.trim(),
       categoria: vals.categoria?.trim() || undefined,
       note: vals.note?.trim() || undefined,
     };
-    updateTemplate(original, changes);
+    const ok = await persistModel(() => updateTemplate(original, changes), 'Semilavorato aggiornato');
+    if (!ok) return;
     // Se stiamo visualizzando questo prodotto, aggiorna selezione
     if (selectedProduct === original) setSelectedProduct(changes.nome || original);
-    toast.success('Semilavorato aggiornato');
     setShowEditDialog({ open: false });
   });
 
@@ -1050,10 +1068,10 @@ export default function Semilavorati({
                                 title: `Eliminare la categoria "${c}"?`,
                                 description: `I ${countByCategory[c] ?? 0} prodotti associati passeranno a "Non assegnato".`,
                                 confirmLabel: 'Elimina categoria',
-                                onConfirm: () => {
-                                  removeCategory(c);
+                                onConfirm: async () => {
+                                  const ok = await persistModel(() => removeCategory(c), 'Categoria eliminata');
+                                  if (!ok) return;
                                   if (selectedCategory === c) setSelectedCategory('');
-                                  toast.success('Categoria eliminata');
                                 },
                               })
                             }
@@ -1652,15 +1670,15 @@ export default function Semilavorati({
               Annulla
             </Button>
             <Button
-              onClick={() => {
+              onClick={async () => {
                 const name = newCategoryName.trim();
                 if (!name) return toast.error('Inserisci il nome della categoria');
                 if (categories.includes(name)) return toast.error('Questa categoria esiste già');
-                addCategory(name);
+                const ok = await persistModel(() => addCategory(name), 'Categoria creata');
+                if (!ok) return;
                 setSelectedCategory(name);
                 setNewCategoryName('');
                 setNewCategoryOpen(false);
-                toast.success('Categoria creata');
               }}
             >
               <Plus className="h-4 w-4" />
@@ -1688,14 +1706,14 @@ export default function Semilavorati({
               Annulla
             </Button>
             <Button
-              onClick={() => {
+              onClick={async () => {
                 const name = renameState.name.trim();
                 if (!name || !renameState.cat) return toast.error('Inserisci il nuovo nome');
                 if (name !== renameState.cat && categories.includes(name)) return toast.error('Esiste già una categoria con questo nome');
-                renameCategory(renameState.cat, name);
+                const ok = await persistModel(() => renameCategory(renameState.cat!, name), 'Categoria rinominata');
+                if (!ok) return;
                 if (selectedCategory === renameState.cat) setSelectedCategory(name);
                 setRenameState({ open: false, name: '' });
-                toast.success('Categoria rinominata');
               }}
             >
               Salva
